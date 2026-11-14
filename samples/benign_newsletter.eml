@@ -1,0 +1,38 @@
+From: "Tech Weekly Digest" <newsletter@techdigest.com>
+To: target-user@enterprise.corp
+Subject: Your Tech Weekly: Issue #142 - Cloud Security Highlights
+Date: Wed, 12 Nov 2026 10:00:00 +0000
+Message-ID: <20261112100000.74612.digest@techdigest.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="----=_Part_112233_445566.1700000000"
+Reply-To: feedback@techdigest.com
+Return-Path: <bounces@techdigest.com>
+Authentication-Results: mx.enterprise.corp;
+    spf=pass (sender IP is 198.51.100.25) smtp.mailfrom=bounces@techdigest.com;
+    dkim=pass header.i=@techdigest.com;
+    dmarc=pass action=none header.from=techdigest.com
+Received: from mail.techdigest.com (198.51.100.25)
+    by mx.enterprise.corp (Postfix) with ESMTPS id 3Z78Qp1
+    for <target-user@enterprise.corp>; Wed, 12 Nov 2026 10:00:04 +0000
+
+------=_Part_112233_445566.1700000000
+Content-Type: text/plain; charset=UTF-8
+
+Welcome to Tech Weekly Issue #142!
+Read the full articles on our site: https://techdigest.com/issues/142
+
+To unsubscribe, visit https://techdigest.com/unsubscribe
+
+------=_Part_112233_445566.1700000000
+Content-Type: text/html; charset=UTF-8
+
+<!DOCTYPE html>
+<html>
+<body>
+  <h1>Tech Weekly Issue #142</h1>
+  <p>Here are this week's top engineering insights.</p>
+  <p><a href="https://techdigest.com/issues/142">Read Full Newsletter</a></p>
+  <p><small><a href="https://techdigest.com/unsubscribe">Unsubscribe</a></small></p>
+</body>
+</html>
+------=_Part_112233_445566.1700000000--

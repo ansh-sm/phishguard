@@ -1,0 +1,67 @@
+From: "PayPal Security Support" <security-alerts@paypa1-update.com>
+To: target-user@enterprise.corp
+Subject: URGENT: Your PayPal account has been restricted!
+Date: Fri, 14 Nov 2026 18:22:10 +0000
+Message-ID: <20261114182210.89234.sec@paypa1-update.com>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="----=_Part_982347_18273912.1700000000"
+Reply-To: credential-collector@stealer-domain.xyz
+Return-Path: <bounce@paypa1-update.com>
+Authentication-Results: mx.enterprise.corp;
+    spf=fail (sender IP is 185.220.101.5) smtp.mailfrom=bounce@paypa1-update.com;
+    dkim=neutral (no key for signature) header.i=@paypa1-update.com;
+    dmarc=fail action=none header.from=paypa1-update.com
+Received: from mail-relay.paypa1-update.com (185.220.101.5)
+    by mx.enterprise.corp (Postfix) with ESMTPS id 4X98Kj2
+    for <target-user@enterprise.corp>; Fri, 14 Nov 2026 18:22:15 +0000
+Received: from internal-bot.phish.ru (192.168.1.50)
+    by mail-relay.paypa1-update.com with HTTP; Fri, 14 Nov 2026 18:22:05 +0000
+
+------=_Part_982347_18273912.1700000000
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 7bit
+
+Dear Customer,
+
+We detected unauthorized logins to your PayPal account from an unrecognized IP address.
+Your account has been temporarily limited to prevent fraud.
+
+Please verify your identity immediately within 24 hours to restore full access:
+https://www.paypal.com/signin/verify-identity
+
+If you do not verify within 24 hours, your account will be permanently closed.
+
+Sincerely,
+PayPal Security & Risk Management Team
+
+------=_Part_982347_18273912.1700000000
+Content-Type: text/html; charset=UTF-8
+Content-Transfer-Encoding: 7bit
+
+<!DOCTYPE html>
+<html>
+<head>
+<title>Account Alert</title>
+</head>
+<body style="font-family: Arial, sans-serif;">
+<div style="max-width: 600px; margin: 0 auto; border: 1px solid #ddd; padding: 20px;">
+  <h2 style="color: #d9534f;">Immediate Action Required: Account Limited</h2>
+  <p>Dear Customer,</p>
+  <p>We detected unauthorized logins to your account from an unrecognized device.</p>
+  <p style="background: #fdf7f7; padding: 12px; border-left: 4px solid #d9534f;">
+    <strong>Notice:</strong> Complete identity validation within <strong>24 hours</strong> to avoid permanent account termination.
+  </p>
+  <p>
+    <!-- Deceptive hyperlink: visible text says paypal.com, href points to malicious credential harvester -->
+    <a href="http://185.220.101.5/login/webscr/verify-auth.php?token=98234" 
+       style="display: inline-block; background-color: #0070ba; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold;">
+       https://www.paypal.com/signin/verify-identity
+    </a>
+  </p>
+  <p>If you cannot click the button above, verify via our secondary mirror: <a href="http://bit.ly/paypal-secure-fix">http://bit.ly/paypal-secure-fix</a></p>
+  <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+  <p style="font-size: 11px; color: #888;">&copy; 2026 PayPal Inc. All rights reserved.</p>
+</div>
+</body>
+</html>
+------=_Part_982347_18273912.1700000000--

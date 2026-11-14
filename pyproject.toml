@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phishguard"
+version = "0.1.0"
+description = "Enterprise-grade automated email phishing detection and threat intelligence triage platform."
+readme = "README.md"
+authors = [
+    { name = "Security Engineering Team" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.5.0",
+    "httpx>=0.27.0",
+    "beautifulsoup4>=4.12.0",
+    "rich>=13.7.0",
+    "typer>=0.12.0",
+    "python-dateutil>=2.8.2",
+    "dnspython>=2.6.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0"
+]
+
+[project.scripts]
+phishguard = "phishguard.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
