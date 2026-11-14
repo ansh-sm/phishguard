@@ -48,3 +48,9 @@ htmlcov/
 *.sqlite3
 cache/
 logs/
+
+# Generated reports from scans
+report.html
+report.json
+*.report.html
+*.report.json

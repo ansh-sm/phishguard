@@ -2,7 +2,7 @@
 Incident report, scoring, and verdict data models.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 from pydantic import BaseModel, Field
@@ -41,7 +41,7 @@ class ScoreBreakdown(BaseModel):
 class ScanResult(BaseModel):
     """Complete, self-contained SOC analysis report for an email."""
     scan_id: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     eml_file_path: str
     eml_file_hash_sha256: str
 
