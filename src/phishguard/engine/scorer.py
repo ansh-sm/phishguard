@@ -84,16 +84,19 @@ class ScoringEngine:
 
         url_score = min(35.0, u_score)
 
-        # 3. Attachment Forensics Sub-score (Max 20)
+        # 3. Attachment Forensics Sub-score (Max 30)
+        has_critical_attachment = False
         a_score = 0.0
         for att in attachments:
             if att.risk_score > 0:
-                a_score += (att.risk_score / 100.0) * 20.0
+                a_score += (att.risk_score / 100.0) * 30.0
                 for r in att.risk_reasons:
                     if r not in key_findings:
                         key_findings.append(r)
+            if att.is_executable or att.is_double_extension or att.has_macros:
+                has_critical_attachment = True
 
-        attachment_score = min(20.0, a_score)
+        attachment_score = min(30.0, a_score)
 
         # 4. Content & Urgency Sub-score (Max 15)
         c_score = 0.0
@@ -119,6 +122,10 @@ class ScoringEngine:
 
         # Total Aggregation
         total_score = round(min(100.0, header_score + url_score + attachment_score + content_score), 1)
+
+        # Critical override: if dangerous executable/double-extension attachment is present
+        if has_critical_attachment:
+            total_score = max(total_score, 75.0)
 
         # Verdict Classification
         if total_score >= 60.0:

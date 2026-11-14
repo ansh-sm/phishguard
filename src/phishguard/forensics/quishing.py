@@ -41,8 +41,8 @@ class QuishingDetector:
         risk_reasons: list[str] = []
         risk_score: float = 0.0
 
-        # 1. Content Lure Analysis (Urgency + Scanning Prompts)
-        combined_text = f"{parsed_email.plain_body} {parsed_email.metadata.subject}"
+        # 1. Content Lure Analysis (Urgency + Scanning Prompts across subject, plain body, and HTML)
+        combined_text = f"{parsed_email.metadata.subject} {parsed_email.plain_body} {parsed_email.html_body}"
         lure_matches = self._lure_regex.findall(combined_text)
 
         # 2. Check HTML for embedded QR image indicators

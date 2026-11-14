@@ -1,0 +1,31 @@
+From: "IT Support Helpdesk" <mfa-notifications@msft-auth-portal.com>
+To: employee@company.com
+Subject: Action Required: Mandatory Microsoft MFA Token Migration
+Date: Sun, 15 Nov 2026 01:10:00 +0000
+Message-ID: <20261115011000.99812.mfa@msft-auth-portal.com>
+MIME-Version: 1.0
+Content-Type: multipart/related; boundary="----=_Part_998877_665544.1700000000"
+Reply-To: security-admin@attacker-harvest.xyz
+Authentication-Results: mx.company.com;
+    spf=fail (sender IP is 194.26.29.112) smtp.mailfrom=mfa-notifications@msft-auth-portal.com;
+    dkim=none;
+    dmarc=fail action=none header.from=msft-auth-portal.com
+Received: from gateway.msft-auth-portal.com (194.26.29.112)
+    by mx.company.com with ESMTPS id 5G89Kl9; Sun, 15 Nov 2026 01:10:05 +0000
+
+------=_Part_998877_665544.1700000000
+Content-Type: text/html; charset=UTF-8
+
+<!DOCTYPE html>
+<html>
+<body style="font-family: Arial, sans-serif;">
+  <h3>Microsoft 365 Security Notice</h3>
+  <p>Our security systems require all corporate accounts to update their Multi-Factor Authentication token within 24 hours.</p>
+  <p>Please open your mobile authenticator app and scan this QR code immediately:</p>
+  <div style="border: 1px dashed #ccc; padding: 15px; display: inline-block;">
+    <img src="cid:authenticator_qr.png" id="qr-code-display" alt="Scan QR Code to Verify MFA" />
+  </div>
+  <p>If you fail to scan before the deadline, your account will be temporarily suspended.</p>
+</body>
+</html>
+------=_Part_998877_665544.1700000000--
