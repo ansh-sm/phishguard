@@ -2,8 +2,10 @@
 ### Enterprise-Grade Automated Phishing Detection & Threat Intelligence Platform
 
 [![Python Version](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue.svg)](https://www.python.org/)
-[![Tests Passing](https://img.shields.io/badge/tests-26%20passed-brightgreen.svg)]()
+[![Tests Passing](https://img.shields.io/badge/tests-33%20passed-brightgreen.svg)]()
 [![Type Checked](https://img.shields.io/badge/types-strict%20pydantic%20v2-blueviolet.svg)]()
+[![STIX 2.1](https://img.shields.io/badge/OASIS-STIX%202.1%20Compliant-orange.svg)]()
+[![FastAPI](https://img.shields.io/badge/dashboard-FastAPI%20%2B%20Web%20UI-teal.svg)]()
 [![License](https://img.shields.io/badge/license-MIT-green.svg)]()
 
 **PhishGuard SOC** is an enterprise-grade, modular email security and digital forensics engine designed to mirror the workflow of a Tier-2/Tier-3 Security Operations Center (SOC) incident responder:
@@ -94,6 +96,22 @@ phishguard scan samples/phishing_account_alert.eml --offline
 ### 4. Batch Scan a Directory of Emails
 ```bash
 phishguard scan-dir samples/
+```
+
+### 5. Launch Interactive Web Dashboard & REST API
+```bash
+phishguard serve --host 127.0.0.1 --port 8000
+# Open browser at http://127.0.0.1:8000 for interactive drag-and-drop triage
+# Swagger API docs available at http://127.0.0.1:8000/docs
+```
+
+### 6. Threat Hunting: Export IOCs to CSV or OASIS STIX 2.1
+```bash
+# Export firewall blocklist CSV
+phishguard export-iocs samples/phishing_account_alert.eml --format csv --output blocklist.csv
+
+# Export OASIS STIX 2.1 Threat Intelligence Bundle
+phishguard export-iocs samples/phishing_account_alert.eml --format stix --output threat_bundle.json
 ```
 
 ---
