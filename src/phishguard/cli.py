@@ -19,6 +19,7 @@ from phishguard.engine.scorer import ScoringEngine
 from phishguard.forensics.attachments import AttachmentForensicsEngine
 from phishguard.forensics.auth import AuthResultsParser
 from phishguard.forensics.headers import HeaderForensicsEngine
+from phishguard.forensics.iocs import IOCExporter, IOCExtractor
 from phishguard.forensics.quishing import QuishingDetector
 from phishguard.forensics.spoofing import SpoofingDetector
 from phishguard.forensics.urls import UrlAnalyzer
@@ -39,7 +40,12 @@ app = typer.Typer(
 console = Console()
 
 
-async def _run_analysis(parsed: ParsedEmail, offline: bool = False) -> ScanResult:
+async def _run_analysis(
+    parsed: ParsedEmail,
+    offline: bool = False,
+    vt_key: Optional[str] = None,
+    otx_key: Optional[str] = None,
+) -> ScanResult:
     """Core analysis orchestrator pipeline."""
     # 1. Header & Routing Forensics
     header_engine = HeaderForensicsEngine()
@@ -71,12 +77,13 @@ async def _run_analysis(parsed: ParsedEmail, offline: bool = False) -> ScanResul
     url_analyzer = UrlAnalyzer()
     raw_urls = url_analyzer.extract_and_analyze(parsed.plain_body, parsed.html_body)
 
-    intel_pipeline = ThreatIntelPipeline()
+    intel_pipeline = ThreatIntelPipeline(vt_key=vt_key, otx_key=otx_key)
     enriched_urls = await intel_pipeline.enrich_all(raw_urls, offline=offline)
 
-    # 4. Attachment Forensics
+    # 4. Attachment Forensics & VT Enrichment
     attachment_engine = AttachmentForensicsEngine()
-    analyzed_attachments = [attachment_engine.inspect_attachment(att) for att in parsed.attachments]
+    raw_attachments = [attachment_engine.inspect_attachment(att) for att in parsed.attachments]
+    analyzed_attachments = await intel_pipeline.enrich_all_attachments(raw_attachments, offline=offline)
 
     # 5. Quishing Analysis
     quishing_detector = QuishingDetector()
@@ -133,8 +140,10 @@ def scan(
     json_file: Optional[Path] = typer.Option(None, "--json-out", help="Write SIEM JSON report to file"),
     html_file: Optional[Path] = typer.Option(None, "--html", "-H", help="Generate standalone HTML incident report"),
     offline: bool = typer.Option(False, "--offline", help="Run without external threat intelligence lookups"),
+    vt_key: Optional[str] = typer.Option(None, "--vt-key", help="VirusTotal API Key"),
+    otx_key: Optional[str] = typer.Option(None, "--otx-key", help="AlienVault OTX API Key"),
 ):
-    """Ingest and analyze a single .eml email file."""
+    """Ingest and forensically analyze a single .eml email file."""
     if not eml_path.exists():
         console.print(f"[bold red]Error:[/bold red] File not found: {eml_path}")
         raise typer.Exit(code=1)
@@ -142,7 +151,7 @@ def scan(
     parser = EmlParser()
     parsed = parser.parse_file(eml_path)
 
-    result = asyncio.run(_run_analysis(parsed, offline=offline))
+    result = asyncio.run(_run_analysis(parsed, offline=offline, vt_key=vt_key, otx_key=otx_key))
 
     # Exports
     if json_file:
@@ -156,11 +165,60 @@ def scan(
     if json_output:
         console.print(JsonReporter().export(result))
     elif not json_file and not html_file:
-        # Render default terminal dashboard
         TerminalReporter(console=console).render(result)
     elif not json_output:
-        # Also render terminal if outputting to files
         TerminalReporter(console=console).render(result)
+
+
+@app.command(name="export-iocs")
+def export_iocs(
+    eml_path: Path = typer.Argument(..., help="Path to target .eml email file"),
+    format_type: str = typer.Option("csv", "--format", "-f", help="Export format: csv, json, or stix"),
+    output_file: Optional[Path] = typer.Option(None, "--output", "-o", help="File to write exported IOCs"),
+    offline: bool = typer.Option(False, "--offline", help="Run without external threat intelligence lookups"),
+):
+    """Extract and export Indicators of Compromise (IOCs) in CSV, JSON, or STIX 2.1 format."""
+    if not eml_path.exists():
+        console.print(f"[bold red]Error:[/bold red] File not found: {eml_path}")
+        raise typer.Exit(code=1)
+
+    parser = EmlParser()
+    parsed = parser.parse_file(eml_path)
+    result = asyncio.run(_run_analysis(parsed, offline=offline))
+
+    extractor = IOCExtractor()
+    exporter = IOCExporter()
+    bundle = extractor.extract(result)
+
+    fmt = format_type.lower().strip()
+    if fmt == "csv":
+        content = exporter.to_csv(bundle, output_path=output_file)
+    elif fmt == "json":
+        content = exporter.to_json(bundle, output_path=output_file)
+    elif fmt in ("stix", "stix2", "stix21"):
+        content = exporter.to_stix21(bundle, output_path=output_file)
+    else:
+        console.print(f"[bold red]Error:[/bold red] Unsupported format '{format_type}'. Choose csv, json, or stix.")
+        raise typer.Exit(code=1)
+
+    if output_file:
+        console.print(f"[green]✓[/green] Exported {bundle.total_iocs} IOCs ({fmt.upper()}) to [bold]{output_file}[/bold]")
+    else:
+        console.print(content, markup=False)
+
+
+@app.command(name="serve")
+def serve(
+    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Bind host address"),
+    port: int = typer.Option(8000, "--port", "-p", help="Bind port number"),
+    reload: bool = typer.Option(False, "--reload", help="Enable auto-reload on changes"),
+):
+    """Start the interactive local SOC Web Dashboard and REST API."""
+    import uvicorn
+    console.print(f"[bold cyan]PhishGuard SOC Server[/bold cyan] listening at [bold green]http://{host}:{port}[/bold green]")
+    console.print(f"  • Interactive Web Console: [link]http://{host}:{port}[/link]")
+    console.print(f"  • OpenAPI / Swagger Docs:  [link]http://{host}:{port}/docs[/link]")
+    uvicorn.run("phishguard.server.app:app", host=host, port=port, reload=reload)
 
 
 @app.command(name="scan-dir")
