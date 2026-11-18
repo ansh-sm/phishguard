@@ -16,6 +16,7 @@ from phishguard.models.forensics import (
     UrlArtifact,
 )
 from phishguard.models.report import (
+    MitreTechnique,
     ScanResult,
     ScoreBreakdown,
     SeverityEnum,
@@ -36,4 +37,5 @@ __all__ = [
     "SeverityEnum",
     "ScoreBreakdown",
     "ScanResult",
+    "MitreTechnique",
 ]

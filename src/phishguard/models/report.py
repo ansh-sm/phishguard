@@ -16,6 +16,17 @@ from phishguard.models.forensics import (
 )
 
 
+class MitreTechnique(BaseModel):
+    """Represents an observable adversary technique mapped to MITRE ATT&CK."""
+    technique_id: str = Field(description="e.g. T1566.001")
+    technique_name: str = Field(description="e.g. Spearphishing Attachment")
+    tactic: str = Field(description="e.g. Initial Access, Defense Evasion")
+    description: str = Field(description="Adversary behavioral explanation")
+    confidence: str = Field(default="HIGH", description="HIGH, MEDIUM, LOW")
+    evidence: list[str] = Field(default_factory=list)
+    attack_url: str = Field(description="Official MITRE ATT&CK technique reference URL")
+
+
 class VerdictEnum(str, Enum):
     CLEAN = "CLEAN"
     SUSPICIOUS = "SUSPICIOUS"
@@ -58,7 +69,8 @@ class ScanResult(BaseModel):
     severity: SeverityEnum
     confidence_percentage: float = Field(default=95.0, description="Forensic confidence level")
 
-    # Actionable Intelligence
+    # Actionable Intelligence & Framework Mapping
     key_findings: list[str] = Field(default_factory=list)
+    mitre_attack: list[MitreTechnique] = Field(default_factory=list, description="Mapped MITRE ATT&CK techniques")
     written_explanation: str = Field(description="SOC plain-English incident summary")
     remediation_steps: list[str] = Field(default_factory=list)
