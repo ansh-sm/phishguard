@@ -82,6 +82,20 @@ class HtmlReporter:
             """)
         att_table_html = "".join(att_rows) if att_rows else "<tr><td colspan='5' class='text-muted'>No attachments present.</td></tr>"
 
+        # Rows for MITRE ATT&CK
+        mitre_rows = []
+        for t in result.mitre_attack:
+            evidence_str = html.escape("; ".join(t.evidence[:2]))
+            mitre_rows.append(f"""
+                <tr>
+                    <td><a href="{html.escape(t.attack_url)}" target="_blank" class="code" style="color: var(--danger); font-weight: bold; text-decoration: none;">{html.escape(t.technique_id)}</a></td>
+                    <td><strong>{html.escape(t.technique_name)}</strong></td>
+                    <td>{html.escape(t.tactic)}</td>
+                    <td>{evidence_str}</td>
+                </tr>
+            """)
+        mitre_table_html = "".join(mitre_rows) if mitre_rows else "<tr><td colspan='4' class='text-muted'>No overt adversary techniques mapped.</td></tr>"
+
         # Findings items
         findings_html = "".join([f"<li>{html.escape(f)}</li>" for f in result.key_findings]) or "<li>No critical security anomalies discovered.</li>"
 
@@ -207,6 +221,18 @@ class HtmlReporter:
       </thead>
       <tbody>
         {att_table_html}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card" style="margin-bottom: 25px; border-left: 4px solid var(--danger);">
+    <div class="card-title" style="color: var(--danger);">MITRE ATT&CK Enterprise Matrix Mapping</div>
+    <table>
+      <thead>
+        <tr><th>Technique ID</th><th>Technique Name</th><th>Tactic</th><th>Forensic Evidence</th></tr>
+      </thead>
+      <tbody>
+        {mitre_table_html}
       </tbody>
     </table>
   </div>

@@ -39,7 +39,11 @@ class TerminalReporter:
         if result.attachments:
             self._render_attachments_table(result)
 
-        # 6. Forensic Evidence & Remediation Playbook
+        # 6. MITRE ATT&CK Framework Mapping
+        if result.mitre_attack:
+            self._render_mitre_table(result)
+
+        # 7. Forensic Evidence & Remediation Playbook
         self._render_evidence_and_playbook(result)
         self.console.print()
 
@@ -175,6 +179,20 @@ class TerminalReporter:
                 att.detected_mime or "Unknown",
                 ", ".join(flags) if flags else "[green]None[/green]",
             )
+
+        self.console.print(table)
+
+    def _render_mitre_table(self, result: ScanResult) -> None:
+        """Render MITRE ATT&CK techniques table."""
+        table = Table(title="MITRE ATT&CK Framework Mapping", show_header=True, header_style="bold red")
+        table.add_column("Technique ID", style="bold red")
+        table.add_column("Name", style="bold")
+        table.add_column("Tactic", style="dim")
+        table.add_column("Evidence Summary")
+
+        for t in result.mitre_attack:
+            evidence_summary = ", ".join(t.evidence[:2])
+            table.add_row(t.technique_id, t.technique_name, t.tactic, evidence_summary)
 
         self.console.print(table)
 

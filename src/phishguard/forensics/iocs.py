@@ -33,6 +33,7 @@ class IOCBundle(BaseModel):
     verdict: VerdictEnum
     total_iocs: int = 0
     items: list[IOCItem] = Field(default_factory=list)
+    mitre_techniques: list[dict[str, str]] = Field(default_factory=list)
 
 
 class IOCExtractor:
@@ -104,12 +105,22 @@ class IOCExtractor:
             add_item("sha256", att.sha256, att.sha256, "malicious-attachment", conf, f"SHA-256 for attachment: {att.filename}")
             add_item("md5", att.md5, att.md5, "malicious-attachment", conf, f"MD5 for attachment: {att.filename}")
 
+        mitre_list = []
+        for t in getattr(result, "mitre_attack", []):
+            mitre_list.append({
+                "technique_id": t.technique_id,
+                "name": t.technique_name,
+                "tactic": t.tactic,
+                "url": t.attack_url,
+            })
+
         return IOCBundle(
             scan_id=result.scan_id,
             timestamp=result.timestamp,
             verdict=result.verdict,
             total_iocs=len(items),
             items=items,
+            mitre_techniques=mitre_list,
         )
 
 
@@ -192,6 +203,28 @@ class IOCExporter:
                 "labels": [item.threat_category, bundle.verdict.value.lower()],
             }
             objects.append(indicator_obj)
+
+        # 3. Convert MITRE ATT&CK techniques to STIX 2.1 Attack Pattern SDOs
+        for m in bundle.mitre_techniques:
+            pattern_id = f"attack-pattern--{uuid.uuid4()}"
+            indicator_ids.append(pattern_id)
+            pattern_obj = {
+                "type": "attack-pattern",
+                "spec_version": "2.1",
+                "id": pattern_id,
+                "created": now_iso,
+                "modified": now_iso,
+                "name": f"{m['technique_id']} - {m['name']}",
+                "description": f"MITRE ATT&CK tactic '{m['tactic']}' observable identified in phishing email",
+                "external_references": [
+                    {
+                        "source_name": "mitre-attack",
+                        "external_id": m["technique_id"],
+                        "url": m["url"],
+                    }
+                ],
+            }
+            objects.append(pattern_obj)
 
         # Append parent Report object
         report_obj = {

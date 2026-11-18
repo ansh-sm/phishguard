@@ -171,6 +171,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
     <div class="tabs">
       <button class="tab-btn active" onclick="switchTab('tabOverview')">Overview & Evidence</button>
+      <button class="tab-btn" onclick="switchTab('tabMitre')">MITRE ATT&CK</button>
       <button class="tab-btn" onclick="switchTab('tabHops')">Hop Route Tracer</button>
       <button class="tab-btn" onclick="switchTab('tabURLs')">URLs & Intel</button>
       <button class="tab-btn" onclick="switchTab('tabAttachments')">Attachments</button>
@@ -196,7 +197,18 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       </div>
     </div>
 
-    <!-- Tab 2: Hops -->
+    <!-- Tab 2: MITRE ATT&CK -->
+    <div id="tabMitre" class="tab-content">
+      <div class="card" style="border-left: 4px solid var(--danger);">
+        <h4 style="color: var(--danger);">MITRE ATT&CK Framework Adversary Techniques</h4>
+        <table>
+          <thead><tr><th>Technique ID</th><th>Technique Name</th><th>Tactic</th><th>Confidence</th><th>Forensic Evidence</th></tr></thead>
+          <tbody id="mitreBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Tab 3: Hops -->
     <div id="tabHops" class="tab-content">
       <div class="card">
         <h4>Chronological Received Hop Trail (Origin ➔ MX Gateway)</h4>
@@ -312,6 +324,18 @@ function renderResults(res) {
   // Findings
   const findingsList = document.getElementById('findingsList');
   findingsList.innerHTML = res.key_findings.map(f => `<li>${f}</li>`).join('') || '<li>No critical anomalies discovered.</li>';
+
+  // MITRE ATT&CK
+  const mitreBody = document.getElementById('mitreBody');
+  mitreBody.innerHTML = (res.mitre_attack || []).map(m => `
+    <tr>
+      <td><a href="${m.attack_url}" target="_blank" class="code" style="color: var(--danger); font-weight: bold; text-decoration: none;">${m.technique_id}</a></td>
+      <td><strong>${m.technique_name}</strong></td>
+      <td>${m.tactic}</td>
+      <td><span class="pill danger">${m.confidence}</span></td>
+      <td>${(m.evidence || []).join('; ')}</td>
+    </tr>
+  `).join('') || '<tr><td colspan="5">No overt adversary techniques mapped.</td></tr>';
 
   // Hops
   const hopsBody = document.getElementById('hopsBody');
