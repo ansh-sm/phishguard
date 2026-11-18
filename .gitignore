@@ -54,3 +54,5 @@ report.html
 report.json
 *.report.html
 *.report.json
+test_*.eml
+generated_*.eml

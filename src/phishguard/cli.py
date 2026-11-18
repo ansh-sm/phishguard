@@ -14,6 +14,7 @@ from rich.table import Table
 import typer
 
 from phishguard import __version__
+from phishguard.engine.mitre import MitreAttackMapper
 from phishguard.engine.narrative import NarrativeGenerator
 from phishguard.engine.scorer import ScoringEngine
 from phishguard.forensics.attachments import AttachmentForensicsEngine
@@ -23,6 +24,7 @@ from phishguard.forensics.iocs import IOCExporter, IOCExtractor
 from phishguard.forensics.quishing import QuishingDetector
 from phishguard.forensics.spoofing import SpoofingDetector
 from phishguard.forensics.urls import UrlAnalyzer
+from phishguard.generator.sample_generator import SampleGenerator
 from phishguard.intel.pipeline import ThreatIntelPipeline
 from phishguard.models.forensics import HeaderAnalysis
 from phishguard.models.report import ScanResult, VerdictEnum
@@ -30,6 +32,7 @@ from phishguard.parser.eml_parser import EmlParser, ParsedEmail
 from phishguard.reporters.html_reporter import HtmlReporter
 from phishguard.reporters.json_reporter import JsonReporter
 from phishguard.reporters.terminal import TerminalReporter
+from phishguard.watcher.imap_watcher import ImapMailboxWatcher
 
 app = typer.Typer(
     name="phishguard",
@@ -100,7 +103,17 @@ async def _run_analysis(
         subject=parsed.metadata.subject,
     )
 
-    # 7. Narrative & Remediation
+    # 7. MITRE ATT&CK Framework Mapping
+    mitre_mapper = MitreAttackMapper()
+    mitre_techniques = mitre_mapper.map_attack(
+        headers=header_analysis,
+        urls=enriched_urls,
+        attachments=analyzed_attachments,
+        quishing=quishing_result,
+        scores=scores,
+    )
+
+    # 8. Narrative & Remediation
     narrative_gen = NarrativeGenerator()
     written_explanation, remediation_steps = narrative_gen.generate(
         verdict=verdict,
@@ -128,6 +141,7 @@ async def _run_analysis(
         severity=severity,
         confidence_percentage=confidence,
         key_findings=key_findings,
+        mitre_attack=mitre_techniques,
         written_explanation=written_explanation,
         remediation_steps=remediation_steps,
     )
@@ -219,6 +233,61 @@ def serve(
     console.print(f"  • Interactive Web Console: [link]http://{host}:{port}[/link]")
     console.print(f"  • OpenAPI / Swagger Docs:  [link]http://{host}:{port}/docs[/link]")
     uvicorn.run("phishguard.server.app:app", host=host, port=port, reload=reload)
+
+
+@app.command(name="generate-sample")
+def generate_sample(
+    lure: str = typer.Option("credential-harvest", "--lure", "-l", help="Lure type: credential-harvest, bec, quishing, macro-invoice, benign"),
+    recipient: str = typer.Option("target@company.com", "--recipient", "-r", help="Target email address"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="File path to save .eml sample"),
+):
+    """Synthesize high-fidelity phishing and benign test .eml emails for detection engineering."""
+    generator = SampleGenerator()
+    content = generator.generate(lure_type=lure, recipient=recipient, output_path=output)
+    if output:
+        console.print(f"[green]✓[/green] Generated synthetic [bold]{lure}[/bold] email at: [yellow]{output}[/yellow]")
+    else:
+        console.print(content, markup=False)
+
+
+@app.command(name="watch")
+def watch(
+    server: str = typer.Option("imap.example.com", "--server", "-s", help="IMAP server hostname"),
+    port: int = typer.Option(993, "--port", "-p", help="IMAP port"),
+    user: str = typer.Option("abuse@company.com", "--user", "-u", help="Mailbox username"),
+    password: str = typer.Option(..., "--password", "-P", envvar="IMAP_PASSWORD", help="Mailbox password or env IMAP_PASSWORD"),
+    folder: str = typer.Option("INBOX", "--folder", "-f", help="Source folder to monitor"),
+    quarantine: str = typer.Option("Quarantine", "--quarantine", "-q", help="Destination quarantine folder"),
+    alert_dir: Optional[Path] = typer.Option(None, "--alert-dir", "-a", help="Directory to save JSON alerts"),
+    interval: int = typer.Option(60, "--interval", "-i", help="Poll interval in seconds"),
+    once: bool = typer.Option(False, "--once", help="Poll once and exit"),
+    offline: bool = typer.Option(False, "--offline", help="Run without external API queries"),
+):
+    """Continuously monitor an IMAP abuse inbox, triage incoming emails, and quarantine threats."""
+    import time
+    console.print(f"[bold cyan]PhishGuard Watcher[/bold cyan] monitoring [yellow]{user}@{server}:{folder}[/yellow]")
+    watcher = ImapMailboxWatcher(
+        host=server, port=port, user=user, password=password,
+        source_folder=folder, quarantine_folder=quarantine, alert_dir=alert_dir
+    )
+
+    def analyze_raw(raw_bytes: bytes) -> ScanResult:
+        p = EmlParser()
+        parsed = p.parse_bytes(raw_bytes)
+        return asyncio.run(_run_analysis(parsed, offline=offline))
+
+    if once:
+        results = watcher.poll_once(analyze_raw)
+        console.print(f"[green]✓[/green] Processed {len(results)} incoming emails. (Quarantined: {watcher.stats.quarantined_count})")
+        return
+
+    console.print(f"[green]✓[/green] Mailbox listener active. Polling every {interval}s... Press Ctrl+C to stop.")
+    try:
+        while True:
+            watcher.poll_once(analyze_raw)
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Watcher terminated by analyst.[/yellow]")
 
 
 @app.command(name="scan-dir")

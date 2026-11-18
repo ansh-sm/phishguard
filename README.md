@@ -2,8 +2,9 @@
 ### Enterprise-Grade Automated Phishing Detection & Threat Intelligence Platform
 
 [![Python Version](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue.svg)](https://www.python.org/)
-[![Tests Passing](https://img.shields.io/badge/tests-33%20passed-brightgreen.svg)]()
+[![Tests Passing](https://img.shields.io/badge/tests-40%20passed-brightgreen.svg)]()
 [![Type Checked](https://img.shields.io/badge/types-strict%20pydantic%20v2-blueviolet.svg)]()
+[![MITRE ATT&CK](https://img.shields.io/badge/MITRE%20ATT%26CK-v14%20Enterprise-red.svg)]()
 [![STIX 2.1](https://img.shields.io/badge/OASIS-STIX%202.1%20Compliant-orange.svg)]()
 [![FastAPI](https://img.shields.io/badge/dashboard-FastAPI%20%2B%20Web%20UI-teal.svg)]()
 [![License](https://img.shields.io/badge/license-MIT-green.svg)]()
@@ -112,6 +113,24 @@ phishguard export-iocs samples/phishing_account_alert.eml --format csv --output 
 
 # Export OASIS STIX 2.1 Threat Intelligence Bundle
 phishguard export-iocs samples/phishing_account_alert.eml --format stix --output threat_bundle.json
+```
+
+### 7. Synthetic Red-Team Phishing Lure Generator
+```bash
+# Generate high-fidelity test emails for detection validation
+phishguard generate-sample --lure credential-harvest --output test_cred.eml
+phishguard generate-sample --lure bec --output test_bec.eml
+phishguard generate-sample --lure quishing --output test_quish.eml
+phishguard generate-sample --lure macro-invoice --output test_invoice.eml
+```
+
+### 8. Continuous IMAP Abuse-Mailbox Watcher & Quarantine Daemon
+```bash
+# Monitor abuse mailbox in real time and automatically quarantine malicious threats
+phishguard watch --server imap.company.com --user abuse@company.com --quarantine Quarantine --interval 60
+
+# Check once and exit (for cron/scheduled pipelines)
+phishguard watch --server imap.company.com --user abuse@company.com --once --offline
 ```
 
 ---
