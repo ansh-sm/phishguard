@@ -2,6 +2,7 @@
 Automated SOC Incident Narrative & Remediation Playbook Generator.
 """
 
+from typing import Optional
 from phishguard.models.report import ScoreBreakdown, SeverityEnum, VerdictEnum
 
 

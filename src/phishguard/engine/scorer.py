@@ -2,6 +2,7 @@
 Multi-Vector Scoring Model for PhishGuard SOC.
 """
 
+from typing import Optional
 from phishguard.models.email import AuthStatus
 from phishguard.models.forensics import (
     AttachmentArtifact,
