@@ -1,0 +1,22 @@
+id: PG-RULE-005
+name: Quishing & QR Code MFA Bypass Lure
+description: Detects image-based QR codes combined with multi-factor authentication or account security verification lures.
+author: PhishGuard SOC Lab
+severity: HIGH
+score_impact: 25.0
+tags:
+  - quishing
+  - qr-code
+  - mfa-bypass
+mitre:
+  technique_id: T1566.002
+  technique_name: Spearphishing Link
+conditions:
+  all:
+    - field: quishing_detected
+      operator: equals
+      value: true
+    - field: body
+      operator: regex_search
+      patterns:
+        - "(?i)(authenticator|mfa|2fa|scan|two-factor|identity|microsoft authenticator|duo)"

@@ -1,0 +1,28 @@
+id: PG-RULE-002
+name: Executive Impersonation & BEC Wire Fraud
+description: Detects Business Email Compromise (BEC) patterns requesting urgent wire transfers, gift cards, or bank detail revisions.
+author: PhishGuard SOC Lab
+severity: CRITICAL
+score_impact: 25.0
+tags:
+  - bec
+  - wire-fraud
+  - social-engineering
+mitre:
+  technique_id: T1566
+  technique_name: Phishing
+conditions:
+  all:
+    - field: body
+      operator: regex_search
+      patterns:
+        - "(?i)(wire transfer|swift code|gift card|banking details|direct deposit|remittance|invoice payment)"
+  any:
+    - field: subject
+      operator: regex_search
+      patterns:
+        - "(?i)(urgent|confidential|quick request|payment|wire)"
+    - field: body
+      operator: regex_search
+      patterns:
+        - "(?i)(are you available|at your desk|keep this confidential|process this immediately)"

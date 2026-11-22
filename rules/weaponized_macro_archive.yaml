@@ -1,0 +1,25 @@
+id: PG-RULE-003
+name: Weaponized Macro or Executable Attachment
+description: Detects attachments bearing double extensions, macro-enabled formats, or binary payloads.
+author: PhishGuard SOC Lab
+severity: CRITICAL
+score_impact: 30.0
+tags:
+  - malware
+  - attachment
+  - macro
+mitre:
+  technique_id: T1566.001
+  technique_name: Spearphishing Attachment
+conditions:
+  any:
+    - field: attachment_is_executable
+      operator: equals
+      value: true
+    - field: attachment_has_macros
+      operator: equals
+      value: true
+    - field: attachment_names
+      operator: regex_search
+      patterns:
+        - "(?i)\\.(vbs|hta|scr|exe|pif|cmd|bat|xlsm|docm)$"

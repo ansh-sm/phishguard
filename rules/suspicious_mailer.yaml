@@ -1,0 +1,25 @@
+id: PG-RULE-004
+name: Automated Mass Mailer or Scripting Client
+description: Detects generic scripting frameworks, PHP mailers, or known mass mailing tools in email routing headers.
+author: PhishGuard SOC Lab
+severity: MEDIUM
+score_impact: 15.0
+tags:
+  - headers
+  - tools
+  - evasion
+mitre:
+  technique_id: T1583.001
+  technique_name: Domains
+conditions:
+  any:
+    - field: headers
+      header_name: x-mailer
+      operator: regex_search
+      patterns:
+        - "(?i)(phpmailer|sendgrid|python-requests|curl|urllib|massmail|darkmailer)"
+    - field: headers
+      header_name: user-agent
+      operator: regex_search
+      patterns:
+        - "(?i)(curl|python|wget|go-http-client)"
