@@ -14,6 +14,7 @@ from rich.table import Table
 import typer
 
 from phishguard import __version__
+from phishguard.alerts import AlertConfig, AlertDispatcher, AlertWebhookType
 from phishguard.engine.mitre import MitreAttackMapper
 from phishguard.engine.narrative import NarrativeGenerator
 from phishguard.engine.scorer import ScoringEngine
@@ -32,6 +33,7 @@ from phishguard.parser.eml_parser import EmlParser, ParsedEmail
 from phishguard.reporters.html_reporter import HtmlReporter
 from phishguard.reporters.json_reporter import JsonReporter
 from phishguard.reporters.terminal import TerminalReporter
+from phishguard.rules.engine import RuleEngine
 from phishguard.watcher.imap_watcher import ImapMailboxWatcher
 
 app = typer.Typer(
@@ -48,6 +50,7 @@ async def _run_analysis(
     offline: bool = False,
     vt_key: Optional[str] = None,
     otx_key: Optional[str] = None,
+    rules_dir: Optional[str] = None,
 ) -> ScanResult:
     """Core analysis orchestrator pipeline."""
     # 1. Header & Routing Forensics
@@ -92,6 +95,19 @@ async def _run_analysis(
     quishing_detector = QuishingDetector()
     quishing_result = quishing_detector.analyze(parsed)
 
+    # 5.5 Custom Detection Rules Evaluation
+    matched_rules = []
+    target_dir = rules_dir or ("rules" if Path("rules").is_dir() else None)
+    if target_dir and Path(target_dir).is_dir():
+        rule_engine = RuleEngine.from_directory(target_dir)
+        matched_rules = rule_engine.evaluate_all(
+            parsed=parsed,
+            headers=header_analysis,
+            urls=enriched_urls,
+            attachments=analyzed_attachments,
+            quishing=quishing_result,
+        )
+
     # 6. Multi-Vector Scoring
     scoring_engine = ScoringEngine()
     scores, verdict, severity, confidence, key_findings = scoring_engine.calculate(
@@ -101,6 +117,7 @@ async def _run_analysis(
         quishing=quishing_result,
         plain_body=parsed.plain_body,
         subject=parsed.metadata.subject,
+        matched_rules=matched_rules,
     )
 
     # 7. MITRE ATT&CK Framework Mapping
@@ -111,6 +128,7 @@ async def _run_analysis(
         attachments=analyzed_attachments,
         quishing=quishing_result,
         scores=scores,
+        matched_rules=matched_rules,
     )
 
     # 8. Narrative & Remediation
@@ -141,6 +159,7 @@ async def _run_analysis(
         severity=severity,
         confidence_percentage=confidence,
         key_findings=key_findings,
+        matched_rules=matched_rules,
         mitre_attack=mitre_techniques,
         written_explanation=written_explanation,
         remediation_steps=remediation_steps,
@@ -156,6 +175,10 @@ def scan(
     offline: bool = typer.Option(False, "--offline", help="Run without external threat intelligence lookups"),
     vt_key: Optional[str] = typer.Option(None, "--vt-key", help="VirusTotal API Key"),
     otx_key: Optional[str] = typer.Option(None, "--otx-key", help="AlienVault OTX API Key"),
+    rules_dir: Optional[str] = typer.Option("rules", "--rules-dir", "-r", help="Directory containing custom YAML detection rules"),
+    webhook_url: Optional[str] = typer.Option(None, "--webhook-url", help="Webhook URL for real-time SOC alerts"),
+    webhook_type: str = typer.Option("generic", "--webhook-type", help="Webhook adapter: slack, discord, teams, generic"),
+    min_score: float = typer.Option(60.0, "--min-score", help="Minimum PhishScore to trigger outbound alert (0-100)"),
 ):
     """Ingest and forensically analyze a single .eml email file."""
     if not eml_path.exists():
@@ -165,7 +188,7 @@ def scan(
     parser = EmlParser()
     parsed = parser.parse_file(eml_path)
 
-    result = asyncio.run(_run_analysis(parsed, offline=offline, vt_key=vt_key, otx_key=otx_key))
+    result = asyncio.run(_run_analysis(parsed, offline=offline, vt_key=vt_key, otx_key=otx_key, rules_dir=rules_dir))
 
     # Exports
     if json_file:
@@ -175,6 +198,19 @@ def scan(
     if html_file:
         HtmlReporter().generate(result, output_path=html_file)
         console.print(f"[green]✓[/green] Standalone HTML incident report written to: [bold]{html_file}[/bold]")
+
+    if webhook_url:
+        alert_config = AlertConfig(
+            webhook_url=webhook_url,
+            webhook_type=AlertWebhookType(webhook_type.lower()),
+            min_score=min_score,
+        )
+        dispatcher = AlertDispatcher(alert_config)
+        dispatched = asyncio.run(dispatcher.send_alert(result))
+        if dispatched:
+            console.print(f"[bold green]✓ Alert successfully dispatched to {webhook_type.upper()} webhook.[/bold green]")
+        else:
+            console.print(f"[dim]Alert not dispatched (Score {result.score.total_score} below threshold {min_score} or endpoint unreachable).[/dim]")
 
     if json_output:
         console.print(JsonReporter().export(result))
@@ -262,6 +298,10 @@ def watch(
     interval: int = typer.Option(60, "--interval", "-i", help="Poll interval in seconds"),
     once: bool = typer.Option(False, "--once", help="Poll once and exit"),
     offline: bool = typer.Option(False, "--offline", help="Run without external API queries"),
+    rules_dir: Optional[str] = typer.Option("rules", "--rules-dir", "-r", help="Directory containing custom YAML rules"),
+    webhook_url: Optional[str] = typer.Option(None, "--webhook-url", help="Webhook URL for automated alert dispatch"),
+    webhook_type: str = typer.Option("generic", "--webhook-type", help="Webhook adapter: slack, discord, teams, generic"),
+    min_score: float = typer.Option(60.0, "--min-score", help="Minimum score to trigger outbound alert"),
 ):
     """Continuously monitor an IMAP abuse inbox, triage incoming emails, and quarantine threats."""
     import time
@@ -271,10 +311,22 @@ def watch(
         source_folder=folder, quarantine_folder=quarantine, alert_dir=alert_dir
     )
 
+    alert_dispatcher = None
+    if webhook_url:
+        alert_config = AlertConfig(
+            webhook_url=webhook_url,
+            webhook_type=AlertWebhookType(webhook_type.lower()),
+            min_score=min_score,
+        )
+        alert_dispatcher = AlertDispatcher(alert_config)
+
     def analyze_raw(raw_bytes: bytes) -> ScanResult:
         p = EmlParser()
         parsed = p.parse_bytes(raw_bytes)
-        return asyncio.run(_run_analysis(parsed, offline=offline))
+        res = asyncio.run(_run_analysis(parsed, offline=offline, rules_dir=rules_dir))
+        if alert_dispatcher and alert_dispatcher.should_alert(res):
+            asyncio.run(alert_dispatcher.send_alert(res))
+        return res
 
     if once:
         results = watcher.poll_once(analyze_raw)
@@ -290,10 +342,148 @@ def watch(
         console.print("\n[yellow]Watcher terminated by analyst.[/yellow]")
 
 
+@app.command(name="test-rules")
+def test_rules(
+    rules_dir: Path = typer.Option(Path("rules"), "--rules-dir", "-r", help="Directory containing custom YAML rules"),
+    samples_dir: Path = typer.Option(Path("samples"), "--samples-dir", "-s", help="Directory containing sample .eml files"),
+):
+    """Evaluate and validate custom YAML detection rules across a corpus of sample emails."""
+    if not rules_dir.is_dir():
+        console.print(f"[bold red]Error:[/bold red] Rules directory not found: {rules_dir}")
+        raise typer.Exit(code=1)
+
+    rule_engine = RuleEngine.from_directory(rules_dir)
+    console.print(f"[bold cyan]Loaded {len(rule_engine.rules)} detection rules from [yellow]{rules_dir}[/yellow][/bold cyan]\n")
+
+    if not samples_dir.is_dir():
+        console.print(f"[bold red]Error:[/bold red] Samples directory not found: {samples_dir}")
+        raise typer.Exit(code=1)
+
+    sample_files = list(samples_dir.glob("*.eml"))
+    if not sample_files:
+        console.print(f"[yellow]No .eml samples found in {samples_dir}[/yellow]")
+        return
+
+    parser = EmlParser()
+    table = Table(title="Rule Evaluation Detection Matrix", show_header=True, header_style="bold blue")
+    table.add_column("Sample EML File", style="bold")
+    table.add_column("Verdict", justify="center")
+    table.add_column("Score", justify="right")
+    table.add_column("Triggered Rules", style="cyan")
+
+    for sf in sample_files:
+        parsed = parser.parse_file(sf)
+        res = asyncio.run(_run_analysis(parsed, offline=True, rules_dir=str(rules_dir)))
+        rule_tags = ", ".join([f"{r.rule_id} ({r.severity})" for r in res.matched_rules]) or "[dim]None[/dim]"
+        v_color = "red" if res.verdict == VerdictEnum.MALICIOUS else ("yellow" if res.verdict == VerdictEnum.SUSPICIOUS else "green")
+        table.add_row(
+            sf.name,
+            f"[{v_color}]{res.verdict.value}[/{v_color}]",
+            f"{res.score.total_score}",
+            rule_tags,
+        )
+
+    console.print(table)
+
+
+@app.command(name="alert-test")
+def alert_test(
+    webhook_url: str = typer.Option(..., "--webhook-url", "-w", help="Target webhook endpoint URL"),
+    webhook_type: str = typer.Option("generic", "--webhook-type", "-t", help="Webhook adapter: slack, discord, teams, generic"),
+    secret: Optional[str] = typer.Option(None, "--secret", help="HMAC secret for generic webhooks"),
+):
+    """Dispatch a simulated high-fidelity incident alert to verify webhook integration."""
+    from phishguard.models.email import AuthenticationResults, AuthStatus, EmailMetadata
+    from phishguard.models.forensics import HeaderAnalysis, UrlArtifact
+    from phishguard.models.report import MitreTechnique, RuleMatch, ScoreBreakdown, SeverityEnum, VerdictEnum
+
+    console.print(f"[bold cyan]Dispatching simulated incident alert to [yellow]{webhook_url}[/yellow] (Adapter: {webhook_type})...[/bold cyan]")
+
+    simulated_result = ScanResult(
+        scan_id="PG-TEST-SIM01",
+        timestamp=datetime.now(timezone.utc),
+        eml_file_path="simulated_phish.eml",
+        eml_file_hash_sha256="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        metadata=EmailMetadata(
+            subject="CRITICAL: Unauthorized Login Attempt Detected",
+            from_address="security@paypal-verification-alert.com",
+            from_name="PayPal Security Team",
+            from_raw='"PayPal Security Team" <security@paypal-verification-alert.com>',
+            to_addresses=["analyst@enterprise.com"],
+            date="Sun, 22 Nov 2026 08:00:00 +0000",
+        ),
+        headers=HeaderAnalysis(
+            hops=[],
+            originating_ip="198.51.100.45",
+            auth=AuthenticationResults(spf_status=AuthStatus.FAIL, dkim_status=AuthStatus.FAIL, dmarc_status=AuthStatus.FAIL),
+            risk_score=30.0,
+        ),
+        urls=[
+            UrlArtifact(
+                raw_url="http://paypal-verification-alert.com/login",
+                defanged_url="hxxp://paypal-verification-alert[.]com/login",
+                domain="paypal-verification-alert.com",
+                threat_intel_flagged=True,
+                threat_intel_source="URLhaus",
+                risk_score=35.0,
+            )
+        ],
+        score=ScoreBreakdown(header_score=30.0, url_score=35.0, attachment_score=0.0, content_score=15.0, total_score=92.0),
+        verdict=VerdictEnum.MALICIOUS,
+        severity=SeverityEnum.CRITICAL,
+        confidence_percentage=99.0,
+        key_findings=[
+            "High urgency credential harvesting threat detected.",
+            "DMARC and SPF authentication failed for sender domain.",
+            "Known malicious domain flagged in threat intelligence feed.",
+        ],
+        matched_rules=[
+            RuleMatch(
+                rule_id="PG-RULE-001",
+                rule_name="Urgent Credential Harvesting Lure",
+                severity="HIGH",
+                score_impact=20.0,
+                description="Urgent account suspension threat with embedded action link.",
+            )
+        ],
+        mitre_attack=[
+            MitreTechnique(
+                technique_id="T1566.002",
+                technique_name="Spearphishing Link",
+                tactic="Initial Access",
+                description="Adversary delivers spearphishing link.",
+                evidence=["Malicious credential harvest link detected."],
+                attack_url="https://attack.mitre.org/techniques/T1566/002/",
+            )
+        ],
+        written_explanation="SIMULATED INCIDENT: Critical credential harvesting phishing attack targeting organization credentials.",
+        remediation_steps=[
+            "Block originating IP 198.51.100.45 on perimeter firewalls.",
+            "Null-route paypal-verification-alert.com in enterprise DNS sinkhole.",
+            "Purge message matching subject from all Exchange/M365 mailboxes.",
+        ],
+    )
+
+    alert_config = AlertConfig(
+        webhook_url=webhook_url,
+        webhook_type=AlertWebhookType(webhook_type.lower()),
+        min_score=0.0,
+        hmac_secret=secret,
+    )
+    dispatcher = AlertDispatcher(alert_config)
+    success = asyncio.run(dispatcher.send_alert(simulated_result))
+
+    if success:
+        console.print("[bold green]✓ Test alert delivered successfully![/bold green]")
+    else:
+        console.print("[bold red]✗ Failed to deliver test alert. Check webhook URL and network connectivity.[/bold red]")
+
+
 @app.command(name="scan-dir")
 def scan_dir(
     directory: Path = typer.Argument(..., help="Directory containing .eml files to batch analyze"),
     offline: bool = typer.Option(False, "--offline", help="Run without external threat intelligence lookups"),
+    rules_dir: Optional[str] = typer.Option("rules", "--rules-dir", "-r", help="Directory containing custom YAML rules"),
 ):
     """Batch scan an entire directory of .eml email files."""
     if not directory.is_dir():
@@ -318,7 +508,7 @@ def scan_dir(
     for file_path in eml_files:
         try:
             parsed = parser.parse_file(file_path)
-            res = asyncio.run(_run_analysis(parsed, offline=offline))
+            res = asyncio.run(_run_analysis(parsed, offline=offline, rules_dir=rules_dir))
 
             verdict_color = "red" if res.verdict == VerdictEnum.MALICIOUS else ("yellow" if res.verdict == VerdictEnum.SUSPICIOUS else "green")
             table.add_row(

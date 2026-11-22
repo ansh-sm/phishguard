@@ -57,6 +57,17 @@ async def cache_stats():
     }
 
 
+@app.get("/api/rules")
+async def get_rules(rules_dir: str = Query("rules", description="Directory containing custom YAML rules")):
+    """Returns all active custom detection rules."""
+    from phishguard.rules import RuleEngine
+    engine = RuleEngine.from_directory(rules_dir)
+    return {
+        "total_rules": len(engine.rules),
+        "rules": [r.model_dump() for r in engine.rules],
+    }
+
+
 @app.post("/api/scan", response_model=ScanResult)
 async def scan_eml(
     file: UploadFile = File(...),
