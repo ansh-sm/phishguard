@@ -1,0 +1,15 @@
+.git
+.venv
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.coverage
+htmlcov
+dist
+build
+*.egg-info
+*.db
+*.sqlite3
+quarantine/
+.env

@@ -1,0 +1,52 @@
+version: "3.8"
+
+services:
+  phishguard-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: phishguard-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - phishguard_cache:/app/data
+      - ./rules:/app/rules:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  phishguard-watcher:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: phishguard-watcher
+    restart: unless-stopped
+    command: >
+      watch
+      --server ${IMAP_HOST:-imap.example.com}
+      --port ${IMAP_PORT:-993}
+      --user ${IMAP_USER:-abuse@example.com}
+      --password ${IMAP_PASSWORD:-secret}
+      --folder ${IMAP_FOLDER:-INBOX}
+      --quarantine /app/quarantine
+      --alert-dir /app/alerts
+      --interval 60
+    volumes:
+      - phishguard_cache:/app/data
+      - ./rules:/app/rules:ro
+      - ./quarantine:/app/quarantine
+      - ./alerts:/app/alerts
+    environment:
+      - PYTHONUNBUFFERED=1
+      - IMAP_PASSWORD=${IMAP_PASSWORD:-secret}
+    profiles:
+      - watcher
+
+volumes:
+  phishguard_cache:
+    name: phishguard_sqlite_cache
