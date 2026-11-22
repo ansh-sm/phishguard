@@ -16,6 +16,19 @@ from phishguard.models.forensics import (
 )
 
 
+class RuleMatch(BaseModel):
+    """Detection rule match details."""
+    rule_id: str
+    rule_name: str
+    severity: str
+    score_impact: float = 0.0
+    description: str
+    mitre_technique_id: Optional[str] = None
+    mitre_technique_name: Optional[str] = None
+    matched_fields: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+
+
 class MitreTechnique(BaseModel):
     """Represents an observable adversary technique mapped to MITRE ATT&CK."""
     technique_id: str = Field(description="e.g. T1566.001")
@@ -71,6 +84,7 @@ class ScanResult(BaseModel):
 
     # Actionable Intelligence & Framework Mapping
     key_findings: list[str] = Field(default_factory=list)
+    matched_rules: list[RuleMatch] = Field(default_factory=list, description="Matched custom detection rules")
     mitre_attack: list[MitreTechnique] = Field(default_factory=list, description="Mapped MITRE ATT&CK techniques")
     written_explanation: str = Field(description="SOC plain-English incident summary")
     remediation_steps: list[str] = Field(default_factory=list)

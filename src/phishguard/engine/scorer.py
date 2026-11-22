@@ -10,7 +10,12 @@ from phishguard.models.forensics import (
     QuishingResult,
     UrlArtifact,
 )
-from phishguard.models.report import ScoreBreakdown, SeverityEnum, VerdictEnum
+from phishguard.models.report import (
+    RuleMatch,
+    ScoreBreakdown,
+    SeverityEnum,
+    VerdictEnum,
+)
 
 
 class ScoringEngine:
@@ -38,6 +43,7 @@ class ScoringEngine:
         quishing: Optional[QuishingResult],
         plain_body: str,
         subject: str,
+        matched_rules: Optional[list[RuleMatch]] = None,
     ) -> tuple[ScoreBreakdown, VerdictEnum, SeverityEnum, float, list[str]]:
         """
         Calculates all sub-scores, verdict, severity, forensic confidence, and key findings.
@@ -121,12 +127,24 @@ class ScoringEngine:
 
         content_score = min(15.0, c_score)
 
-        # Total Aggregation
-        total_score = round(min(100.0, header_score + url_score + attachment_score + content_score), 1)
+        # 5. Custom Detection Rule Impact
+        rules_impact = 0.0
+        if matched_rules:
+            for rm in matched_rules:
+                key_findings.append(f"Detection Rule [{rm.rule_id}] '{rm.rule_name}' triggered ({rm.severity}).")
+                rules_impact += rm.score_impact
 
-        # Critical override: if dangerous executable/double-extension attachment is present
-        if has_critical_attachment:
+        # Total Aggregation
+        total_score = round(min(100.0, header_score + url_score + attachment_score + content_score + rules_impact), 1)
+
+        # Critical override: dangerous attachment or critical rule
+        has_critical_rule = any(rm.severity == "CRITICAL" for rm in (matched_rules or []))
+        if has_critical_attachment or has_critical_rule:
             total_score = max(total_score, 75.0)
+
+        has_high_rule = any(rm.severity == "HIGH" for rm in (matched_rules or []))
+        if has_high_rule:
+            total_score = max(total_score, 60.0)
 
         # Verdict Classification
         if total_score >= 60.0:

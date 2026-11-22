@@ -96,6 +96,34 @@ class HtmlReporter:
             """)
         mitre_table_html = "".join(mitre_rows) if mitre_rows else "<tr><td colspan='4' class='text-muted'>No overt adversary techniques mapped.</td></tr>"
 
+        # Rows for Detection Rules
+        rule_rows = []
+        for r in result.matched_rules:
+            ev = html.escape("; ".join(r.evidence[:2]) if r.evidence else r.description)
+            sev_cls = "danger" if r.severity in ("CRITICAL", "HIGH") else ("warning" if r.severity == "MEDIUM" else "success")
+            rule_rows.append(f"""
+                <tr>
+                    <td><span class="code">{html.escape(r.rule_id)}</span></td>
+                    <td><strong>{html.escape(r.rule_name)}</strong></td>
+                    <td><span class="badge {sev_cls}">{html.escape(r.severity)}</span></td>
+                    <td>+{r.score_impact}</td>
+                    <td>{ev}</td>
+                </tr>
+            """)
+        rules_table_html = f"""
+  <div class="card" style="margin-bottom: 25px; border-left: 4px solid var(--accent-blue);">
+    <div class="card-title">Triggered Custom Detection Rules (YARA/Sigma)</div>
+    <table>
+      <thead>
+        <tr><th>Rule ID</th><th>Rule Name</th><th>Severity</th><th>Score Impact</th><th>Evidence</th></tr>
+      </thead>
+      <tbody>
+        {''.join(rule_rows)}
+      </tbody>
+    </table>
+  </div>
+""" if rule_rows else ""
+
         # Findings items
         findings_html = "".join([f"<li>{html.escape(f)}</li>" for f in result.key_findings]) or "<li>No critical security anomalies discovered.</li>"
 
@@ -224,6 +252,8 @@ class HtmlReporter:
       </tbody>
     </table>
   </div>
+
+  {rules_table_html}
 
   <div class="card" style="margin-bottom: 25px; border-left: 4px solid var(--danger);">
     <div class="card-title" style="color: var(--danger);">MITRE ATT&CK Enterprise Matrix Mapping</div>

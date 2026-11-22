@@ -11,7 +11,7 @@ from phishguard.models.forensics import (
     QuishingResult,
     UrlArtifact,
 )
-from phishguard.models.report import MitreTechnique, ScoreBreakdown
+from phishguard.models.report import MitreTechnique, RuleMatch, ScoreBreakdown
 
 
 class MitreAttackMapper:
@@ -71,6 +71,7 @@ class MitreAttackMapper:
         attachments: list[AttachmentArtifact],
         quishing: Optional[QuishingResult],
         scores: ScoreBreakdown,
+        matched_rules: Optional[list[RuleMatch]] = None,
     ) -> list[MitreTechnique]:
         """Maps forensic artifacts to observed MITRE ATT&CK techniques."""
         identified_techniques: list[MitreTechnique] = []
@@ -213,5 +214,34 @@ class MitreAttackMapper:
                     attack_url=spec["url"],
                 )
             )
+
+        # 6. Detection Rules MITRE Enriched Techniques
+        if matched_rules:
+            for rm in matched_rules:
+                if rm.mitre_technique_id:
+                    tid = rm.mitre_technique_id
+                    evidence_str = f"Detection rule [{rm.rule_id}] triggered: {rm.rule_name}"
+                    existing = next((t for t in identified_techniques if t.technique_id == tid), None)
+                    if existing:
+                        if evidence_str not in existing.evidence:
+                            existing.evidence.append(evidence_str)
+                    else:
+                        spec = self.TECHNIQUE_CATALOG.get(tid, {
+                            "name": rm.mitre_technique_name or tid,
+                            "tactic": "Initial Access",
+                            "description": rm.description,
+                            "url": f"https://attack.mitre.org/techniques/{tid.replace('.', '/')}/",
+                        })
+                        identified_techniques.append(
+                            MitreTechnique(
+                                technique_id=tid,
+                                technique_name=spec["name"],
+                                tactic=spec["tactic"],
+                                description=spec["description"],
+                                confidence="HIGH" if rm.severity in ("HIGH", "CRITICAL") else "MEDIUM",
+                                evidence=[evidence_str],
+                                attack_url=spec["url"],
+                            )
+                        )
 
         return identified_techniques

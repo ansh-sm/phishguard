@@ -40,7 +40,11 @@ class TerminalReporter:
         if result.attachments:
             self._render_attachments_table(result)
 
-        # 6. MITRE ATT&CK Framework Mapping
+        # 6. Triggered Detection Rules
+        if result.matched_rules:
+            self._render_rules_table(result)
+
+        # 7. MITRE ATT&CK Framework Mapping
         if result.mitre_attack:
             self._render_mitre_table(result)
 
@@ -179,6 +183,31 @@ class TerminalReporter:
                 att.original_mime,
                 att.detected_mime or "Unknown",
                 ", ".join(flags) if flags else "[green]None[/green]",
+            )
+
+        self.console.print(table)
+
+    def _render_rules_table(self, result: ScanResult) -> None:
+        """Render matched custom detection rules table."""
+        if not result.matched_rules:
+            return
+
+        table = Table(title="Triggered Custom Detection Rules (YARA/Sigma)", show_header=True, header_style="bold blue")
+        table.add_column("Rule ID", style="bold cyan")
+        table.add_column("Rule Name", style="bold")
+        table.add_column("Severity", justify="center")
+        table.add_column("Score Impact", justify="right")
+        table.add_column("Evidence Summary")
+
+        for r in result.matched_rules:
+            sev_color = "red" if r.severity in ("CRITICAL", "HIGH") else ("yellow" if r.severity == "MEDIUM" else "green")
+            evidence_summary = "; ".join(r.evidence[:2]) if r.evidence else r.description
+            table.add_row(
+                r.rule_id,
+                r.rule_name,
+                f"[{sev_color}]{r.severity}[/{sev_color}]",
+                f"+{r.score_impact}",
+                evidence_summary[:65] + "..." if len(evidence_summary) > 65 else evidence_summary,
             )
 
         self.console.print(table)

@@ -11,9 +11,9 @@ class UrlArtifact(BaseModel):
     """Extracted and analyzed URL artifact."""
     raw_url: str
     defanged_url: str
-    domain: str
-    tld: str
-    scheme: str
+    domain: str = ""
+    tld: str = ""
+    scheme: str = ""
     path: str = ""
     anchor_text: Optional[str] = None
 
@@ -38,14 +38,14 @@ class UrlArtifact(BaseModel):
 class AttachmentArtifact(BaseModel):
     """Forensic metadata for an extracted email attachment."""
     filename: str
-    original_mime: str
+    original_mime: str = "application/octet-stream"
     detected_mime: Optional[str] = None
     size_bytes: int = 0
 
     # Hashes
-    md5: str
-    sha1: str
-    sha256: str
+    md5: str = ""
+    sha1: str = ""
+    sha256: str = ""
 
     # Security indicators
     is_double_extension: bool = False

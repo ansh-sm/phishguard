@@ -4,8 +4,8 @@ Email data models representing RFC 5322 structure, headers, and metadata.
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional
-from pydantic import BaseModel, Field
+from typing import Any, Optional
+from pydantic import BaseModel, Field, model_validator
 
 
 class AuthStatus(str, Enum):
@@ -91,3 +91,21 @@ class EmailMetadata(BaseModel):
 
     # Custom or suspicious X-headers
     x_headers: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def handle_aliases(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "from_address" in data and not data.get("from_email"):
+                data["from_email"] = data["from_address"]
+            if "reply_to" in data and not data.get("reply_to_email"):
+                data["reply_to_email"] = data["reply_to"]
+        return data
+
+    @property
+    def from_address(self) -> str:
+        return self.from_email or self.from_raw
+
+    @property
+    def reply_to(self) -> Optional[str]:
+        return self.reply_to_email or self.reply_to_raw
