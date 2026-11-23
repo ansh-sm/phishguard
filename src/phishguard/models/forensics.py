@@ -54,6 +54,7 @@ class AttachmentArtifact(BaseModel):
     is_archive: bool = False
     has_macros: bool = False
     archive_contents: list[str] = Field(default_factory=list)
+    yara_matches: list[str] = Field(default_factory=list, description="Matched YARA binary signatures")
 
     risk_score: float = Field(default=0.0, description="Calculated risk score for attachment (0-100)")
     risk_reasons: list[str] = Field(default_factory=list)

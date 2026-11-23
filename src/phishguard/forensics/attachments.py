@@ -9,6 +9,7 @@ from typing import Optional
 import zipfile
 
 from phishguard.models.forensics import AttachmentArtifact
+from phishguard.forensics.yara_scanner import YaraScanner
 from phishguard.parser.eml_parser import RawAttachment
 
 
@@ -92,6 +93,20 @@ class AttachmentForensicsEngine:
                     risk_score += 40.0
                     break
 
+        # 3.5 YARA Binary Signature Inspection
+        yara_scanner = YaraScanner()
+        yara_hits = yara_scanner.scan_bytes(payload, filename=filename)
+        yara_matches = []
+        for ym in yara_hits:
+            yara_matches.append(ym.rule_name)
+            risk_reasons.append(f"[{ym.rule_name}] {ym.description} ({', '.join(ym.matched_indicators[:3])})")
+            if ym.severity == "CRITICAL":
+                risk_score += 45.0
+            elif ym.severity == "HIGH":
+                risk_score += 30.0
+            else:
+                risk_score += 15.0
+
         # 4. Synthesize Risk Scoring & Findings
         if is_executable:
             risk_reasons.append(f"Direct executable file payload detected ({primary_ext or detected_desc}).")
@@ -128,6 +143,7 @@ class AttachmentForensicsEngine:
             is_archive=is_archive,
             has_macros=has_macros,
             archive_contents=archive_contents,
+            yara_matches=yara_matches,
             risk_score=min(100.0, risk_score),
             risk_reasons=risk_reasons,
         )
