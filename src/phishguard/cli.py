@@ -34,6 +34,8 @@ from phishguard.reporters.html_reporter import HtmlReporter
 from phishguard.reporters.json_reporter import JsonReporter
 from phishguard.reporters.terminal import TerminalReporter
 from phishguard.rules.engine import RuleEngine
+from phishguard.hunting import AttackGraphBuilder, CampaignClusterer, ThreatCampaign, AttackGraph
+from phishguard.siem import SiemConfig, SiemForwarder, SiemTargetType, SiemForwardResult
 from phishguard.soar.generator import RemediationEngine
 from phishguard.soar.models import PlatformType
 from phishguard.storage.database import IncidentDatabase
@@ -668,6 +670,167 @@ def hunt(
         )
 
     console.print(table)
+
+
+@app.command(name="forward")
+def forward_event(
+    file_path: Path = typer.Argument(..., help="Path to .eml file to analyze and stream to SIEM"),
+    target: str = typer.Option("splunk", "--target", "-t", help="SIEM target: splunk, elastic, sentinel, webhook"),
+    url: str = typer.Option(..., "--url", "-u", help="SIEM collector/ingestion endpoint URL"),
+    token: Optional[str] = typer.Option(None, "--token", help="Auth token or Bearer secret"),
+    api_key: Optional[str] = typer.Option(None, "--api-key", help="Elasticsearch API Key"),
+    index: str = typer.Option("phishguard_threats", "--index", "-i", help="Index, sourcetype, or dataset name"),
+    workspace_id: Optional[str] = typer.Option(None, "--workspace-id", help="Azure Log Analytics Workspace ID"),
+    workspace_key: Optional[str] = typer.Option(None, "--workspace-key", help="Azure Log Analytics Workspace Key"),
+    offline: bool = typer.Option(False, "--offline", help="Run without external threat intelligence lookups"),
+):
+    """Stream analyzed phishing incident event directly into enterprise SIEM (Splunk, Elastic, Sentinel)."""
+    if not file_path.exists():
+        console.print(f"[bold red]Error:[/bold red] Email file not found: {file_path}")
+        raise typer.Exit(code=1)
+
+    console.print(f"[bold cyan]PhishGuard SOC[/bold cyan] Analyzing [yellow]{file_path.name}[/yellow] for SIEM forwarding...")
+    parser = EmlParser()
+    parsed = parser.parse_file(file_path)
+    result = asyncio.run(_run_analysis(parsed, offline=offline))
+
+    target_enum = SiemTargetType(target.lower())
+    config = SiemConfig(
+        target_type=target_enum,
+        endpoint_url=url,
+        auth_token=token,
+        api_key=api_key,
+        index_name=index,
+        workspace_id=workspace_id,
+        workspace_key=workspace_key,
+    )
+
+    forward_res = SiemForwarder.forward_scan_result(config, result)
+    if forward_res.success:
+        console.print(f"\n[bold green]✓ Successfully forwarded incident to {target.upper()}![/bold green]")
+        console.print(f"  • [bold]Status Code:[/bold] {forward_res.status_code}")
+        console.print(f"  • [bold]Target URL:[/bold] {url}")
+        console.print(f"  • [bold]Event ID:[/bold] {result.scan_id}")
+        console.print(f"  • [bold]Verdict:[/bold] {result.verdict.value} (Score {result.score.total_score})")
+    else:
+        console.print(f"\n[bold red]✗ Failed to forward incident to {target.upper()}:[/bold red]")
+        console.print(f"  • [bold]Error:[/bold] {forward_res.error_message}")
+        raise typer.Exit(code=1)
+
+
+@app.command(name="forward-test")
+def forward_test(
+    target: str = typer.Option("splunk", "--target", "-t", help="SIEM target: splunk, elastic, sentinel, webhook"),
+    url: str = typer.Option(..., "--url", "-u", help="SIEM collector/ingestion endpoint URL"),
+    token: Optional[str] = typer.Option(None, "--token", help="Auth token or Bearer secret"),
+    api_key: Optional[str] = typer.Option(None, "--api-key", help="Elasticsearch API Key"),
+    index: str = typer.Option("phishguard_threats", "--index", "-i", help="Index, sourcetype, or dataset name"),
+    workspace_id: Optional[str] = typer.Option(None, "--workspace-id", help="Azure Log Analytics Workspace ID"),
+    workspace_key: Optional[str] = typer.Option(None, "--workspace-key", help="Azure Log Analytics Workspace Key"),
+):
+    """Test connectivity, authentication, and endpoint reachability for enterprise SIEM."""
+    target_enum = SiemTargetType(target.lower())
+    config = SiemConfig(
+        target_type=target_enum,
+        endpoint_url=url,
+        auth_token=token,
+        api_key=api_key,
+        index_name=index,
+        workspace_id=workspace_id,
+        workspace_key=workspace_key,
+    )
+
+    console.print(f"[bold cyan]Testing connection to {target.upper()} at [dim]{url}[/dim]...[/bold cyan]")
+    test_res = SiemForwarder.test_connection(config)
+
+    if test_res.success:
+        console.print(f"[bold green]✓ Connection test PASSED (HTTP {test_res.status_code})[/bold green]")
+        if test_res.response_body:
+            console.print(f"[dim]Response: {test_res.response_body}[/dim]")
+    else:
+        console.print(f"[bold red]✗ Connection test FAILED:[/bold red] {test_res.error_message}")
+        raise typer.Exit(code=1)
+
+
+@app.command(name="campaign-hunt")
+def campaign_hunt(
+    min_size: int = typer.Option(1, "--min-size", "-m", help="Minimum incidents per campaign cluster"),
+    mermaid: bool = typer.Option(False, "--mermaid", help="Render Mermaid attack topology for top campaign"),
+):
+    """Correlate historical incidents into persistent adversary campaigns and attack clusters."""
+    db = IncidentDatabase()
+    incidents = db.search_incidents(IncidentQueryFilter(limit=100))
+
+    if not incidents:
+        console.print("[yellow]No historical incidents available in database to correlate.[/yellow]")
+        return
+
+    campaigns = CampaignClusterer.cluster_incidents(incidents, min_cluster_size=min_size)
+
+    if not campaigns:
+        console.print(f"[yellow]No threat campaigns identified meeting minimum size {min_size}.[/yellow]")
+        return
+
+    console.print(f"\n[bold cyan]🎯 Identified {len(campaigns)} Active Adversary Campaigns:[/bold cyan]\n")
+    table = Table(title="Correlated Threat Campaigns", show_header=True, header_style="bold cyan")
+    table.add_column("Campaign ID", style="bold red")
+    table.add_column("Campaign Name", style="bold white", max_width=40)
+    table.add_column("Risk Score", justify="right")
+    table.add_column("Incidents", justify="center")
+    table.add_column("Victims", justify="center")
+    table.add_column("Primary Tactics", style="dim", max_width=25)
+    table.add_column("Shared IOCs", style="yellow", max_width=30)
+
+    for c in campaigns:
+        tactics_str = ", ".join(c.primary_techniques[:3]) or "Unknown"
+        iocs_str = ", ".join(c.shared_iocs[:2]) or "None"
+        table.add_row(
+            c.campaign_id,
+            c.name,
+            f"{c.risk_score}",
+            str(len(c.incident_ids)),
+            str(c.victim_count),
+            tactics_str,
+            iocs_str,
+        )
+
+    console.print(table)
+
+    if mermaid and campaigns and campaigns[0].graph:
+        console.print(f"\n[bold magenta]Attack Topology (Mermaid) - {campaigns[0].name}:[/bold magenta]\n")
+        console.print(campaigns[0].graph.to_mermaid())
+        console.print()
+
+
+@app.command(name="graph")
+def generate_graph(
+    file_path: Path = typer.Argument(..., help="Path to .eml file to build attack graph for"),
+    format_type: str = typer.Option("mermaid", "--format", "-f", help="Output format: mermaid, json"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="File to write graph definition to"),
+    offline: bool = typer.Option(False, "--offline", help="Run offline analysis"),
+):
+    """Generate relational attack graph capturing incident delivery topology."""
+    if not file_path.exists():
+        console.print(f"[bold red]Error:[/bold red] Email file not found: {file_path}")
+        raise typer.Exit(code=1)
+
+    parser = EmlParser()
+    parsed = parser.parse_file(file_path)
+    result = asyncio.run(_run_analysis(parsed, offline=offline))
+
+    graph = AttackGraphBuilder.build_incident_graph(result)
+
+    if format_type.lower() == "json":
+        import json
+        content = json.dumps(graph.to_dict(), indent=2)
+    else:
+        content = graph.to_mermaid()
+
+    if output:
+        output.write_text(content, encoding="utf-8")
+        console.print(f"[bold green]✓ Wrote {format_type.upper()} graph to [yellow]{output}[/yellow][/bold green]")
+    else:
+        console.print(content)
 
 
 @app.command(name="version")
