@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import HTMLResponse, PlainTextResponse, Response
+from pydantic import BaseModel
 
 from phishguard import __version__
 from phishguard.cli import _run_analysis
@@ -15,6 +16,8 @@ from phishguard.models.report import ScanResult
 from phishguard.parser.eml_parser import EmlParser
 from phishguard.reporters.html_reporter import HtmlReporter
 from phishguard.server.dashboard import DASHBOARD_HTML
+from phishguard.hunting import AttackGraphBuilder, CampaignClusterer, ThreatCampaign, AttackGraph
+from phishguard.siem import SiemConfig, SiemForwarder, SiemForwardResult
 from phishguard.soar.generator import RemediationEngine
 from phishguard.soar.models import PlatformType, RemediationPackage
 from phishguard.storage.database import IncidentDatabase
@@ -171,3 +174,51 @@ async def get_incident_stats():
     """Returns SOC triage metrics and threat statistics."""
     db = IncidentDatabase()
     return db.get_stats()
+
+
+@app.get("/api/campaigns")
+async def get_campaigns(min_size: int = Query(1, description="Minimum incidents per campaign cluster")):
+    """Discover and correlate active threat campaigns across historical incidents."""
+    db = IncidentDatabase()
+    incidents = db.search_incidents(IncidentQueryFilter(limit=100))
+    campaigns = CampaignClusterer.cluster_incidents(incidents, min_cluster_size=min_size)
+    return {
+        "count": len(campaigns),
+        "campaigns": [c.model_dump() for c in campaigns],
+    }
+
+
+@app.get("/api/graph/{scan_id}")
+async def get_incident_graph(scan_id: str):
+    """Generate topological attack graph for an analyzed email incident."""
+    db = IncidentDatabase()
+    result = SCAN_CACHE.get(scan_id) or db.get_scan(scan_id)
+    if not result:
+        raise HTTPException(status_code=404, detail=f"Incident '{scan_id}' not found")
+    graph = AttackGraphBuilder.build_incident_graph(result)
+    return {
+        "scan_id": scan_id,
+        "mermaid": graph.to_mermaid(),
+        "graph": graph.to_dict(),
+    }
+
+
+class SiemForwardRequest(BaseModel):
+    scan_id: str
+    config: SiemConfig
+
+
+@app.post("/api/siem/forward", response_model=SiemForwardResult)
+async def forward_to_siem(req: SiemForwardRequest):
+    """Stream incident event to configured enterprise SIEM."""
+    db = IncidentDatabase()
+    result = SCAN_CACHE.get(req.scan_id) or db.get_scan(req.scan_id)
+    if not result:
+        raise HTTPException(status_code=404, detail=f"Incident '{req.scan_id}' not found")
+    return SiemForwarder.forward_scan_result(req.config, result)
+
+
+@app.post("/api/siem/test", response_model=SiemForwardResult)
+async def test_siem_connection(config: SiemConfig):
+    """Test connectivity and authentication to destination SIEM."""
+    return SiemForwarder.test_connection(config)

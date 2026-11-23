@@ -178,6 +178,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <button class="tab-btn" onclick="switchTab('tabPlaybook')">Containment Playbook</button>
       <button class="tab-btn" onclick="switchTab('tabRemediation')">⚡ SOAR Playbooks</button>
       <button class="tab-btn" onclick="switchTab('tabHunting')">🔍 Threat Hunting</button>
+      <button class="tab-btn" onclick="switchTab('tabCampaigns')">🌐 Threat Campaigns & Graph</button>
+      <button class="tab-btn" onclick="switchTab('tabSiem')">📡 SIEM Streaming</button>
     </div>
 
     <!-- Tab 1: Overview -->
@@ -271,6 +273,63 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <thead><tr><th>Scan ID</th><th>Timestamp</th><th>Sender</th><th>Subject</th><th>Origin IP</th><th>Score</th><th>Verdict</th></tr></thead>
           <tbody id="huntBody"><tr><td colspan="7" style="color: var(--text-secondary);">Click Search or enter a query to hunt past incidents.</td></tr></tbody>
         </table>
+      </div>
+    </div>
+
+    <!-- Tab 8: Threat Campaigns & Graph -->
+    <div id="tabCampaigns" class="tab-content">
+      <div class="card" style="border-left: 4px solid var(--danger);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <h4 style="color: var(--danger); margin: 0;">Correlated Adversary Threat Campaigns</h4>
+          <button class="btn" onclick="loadCampaigns()" style="background: var(--accent); color: #0b0f19;">Refresh Campaigns</button>
+        </div>
+        <table>
+          <thead><tr><th>Campaign ID</th><th>Campaign Name</th><th>Risk</th><th>Incidents</th><th>Victims</th><th>Shared IOCs</th><th>Action</th></tr></thead>
+          <tbody id="campaignsBody"><tr><td colspan="7" style="color: var(--text-secondary);">Click Refresh Campaigns to correlate clusters.</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="card" style="border-left: 4px solid #a855f7;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <h4 style="color: #a855f7; margin: 0;">Incident Attack Graph Topology (Mermaid)</h4>
+          <button class="btn" onclick="navigator.clipboard.writeText(document.getElementById('graphMermaidCode').innerText); alert('Copied Mermaid syntax!');">Copy Graph</button>
+        </div>
+        <pre id="graphMermaidCode" style="background: var(--bg-base); padding: 14px; border-radius: 6px; overflow-x: auto; font-family: monospace; font-size: 12px; color: #c084fc; max-height: 250px;">Upload an email or select a campaign to render attack topology.</pre>
+      </div>
+    </div>
+
+    <!-- Tab 9: SIEM Streaming -->
+    <div id="tabSiem" class="tab-content">
+      <div class="card" style="border-left: 4px solid var(--accent);">
+        <h4 style="color: var(--accent); margin-bottom: 12px;">Stream Incident Telemetry to Enterprise SIEM</h4>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;">
+          <div>
+            <label style="font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 4px;">Target SIEM</label>
+            <select id="siemTarget" style="width: 100%; padding: 8px; background: var(--bg-base); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 6px;">
+              <option value="splunk">Splunk HEC (HTTP Event Collector)</option>
+              <option value="elastic">Elasticsearch (ECS 8.x Ingestion)</option>
+              <option value="sentinel">Microsoft Sentinel (Log Analytics API)</option>
+              <option value="webhook">Generic Webhook / SOAR Collector</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 4px;">Collector / Ingestion URL</label>
+            <input id="siemUrl" type="text" placeholder="https://splunk.corp.com:8088/services/collector/event" style="width: 100%; padding: 8px; background: var(--bg-base); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 6px;">
+          </div>
+          <div>
+            <label style="font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 4px;">Auth Token / API Key</label>
+            <input id="siemToken" type="password" placeholder="HEC Token or ApiKey secret" style="width: 100%; padding: 8px; background: var(--bg-base); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 6px;">
+          </div>
+          <div>
+            <label style="font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 4px;">Index / Dataset Name</label>
+            <input id="siemIndex" type="text" value="phishguard_threats" style="width: 100%; padding: 8px; background: var(--bg-base); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 6px;">
+          </div>
+        </div>
+        <div style="display: flex; gap: 10px; margin-bottom: 14px;">
+          <button class="btn" onclick="testSiem()" style="background: var(--bg-surface-elevated); border: 1px solid var(--accent); color: var(--accent);">Test SIEM Connection</button>
+          <button class="btn" onclick="forwardSiem()" style="background: var(--accent); color: #0b0f19; font-weight: 700;">Forward Active Incident</button>
+        </div>
+        <div id="siemLog" style="background: var(--bg-base); padding: 12px; border-radius: 6px; font-family: monospace; font-size: 12px; color: var(--text-secondary); min-height: 50px;">Awaiting forwarding or diagnostic test...</div>
       </div>
     </div>
   </div>
@@ -403,8 +462,9 @@ function renderResults(res) {
   const playbookList = document.getElementById('playbookList');
   playbookList.innerHTML = res.remediation_steps.map(s => `<li>${s}</li>`).join('');
 
-  // Load SOAR Remediation
+  // Load SOAR Remediation & Attack Graph
   loadRemediation(res.scan_id);
+  loadIncidentGraph(res.scan_id);
 }
 
 function switchTab(tabId) {
@@ -496,6 +556,131 @@ async function executeHunt() {
     `).join('');
   } catch (err) {
     huntBody.innerHTML = '<tr><td colspan="7" style="color: var(--danger);">Error executing hunt query.</td></tr>';
+  }
+}
+
+async function loadIncidentGraph(scanId) {
+  try {
+    const resp = await fetch(`/api/graph/${scanId}`);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    document.getElementById('graphMermaidCode').innerText = data.mermaid;
+  } catch (e) {}
+}
+
+async function loadCampaigns() {
+  const body = document.getElementById('campaignsBody');
+  body.innerHTML = '<tr><td colspan="7">Correlating historical attack clusters...</td></tr>';
+  try {
+    const resp = await fetch('/api/campaigns?min_size=1');
+    const data = await resp.json();
+    if (!data.campaigns || data.campaigns.length === 0) {
+      body.innerHTML = '<tr><td colspan="7" style="color: var(--warning);">No correlated threat campaigns found.</td></tr>';
+      return;
+    }
+    body.innerHTML = data.campaigns.map((c, idx) => `
+      <tr>
+        <td class="code" style="color: var(--danger); font-weight: bold;">${c.campaign_id}</td>
+        <td><strong>${c.name}</strong></td>
+        <td><span class="pill danger">${c.risk_score}</span></td>
+        <td>${c.incident_ids.length}</td>
+        <td>${c.victim_count}</td>
+        <td class="code" style="font-size: 11px;">${(c.shared_iocs || []).slice(0, 2).join(', ') || 'None'}</td>
+        <td><button class="btn" style="padding: 4px 8px; font-size: 11px;" onclick="renderCampaignGraph(${idx})">View Graph</button></td>
+      </tr>
+    `).join('');
+    window._lastCampaigns = data.campaigns;
+    if (data.campaigns.length > 0) renderCampaignGraph(0);
+  } catch (err) {
+    body.innerHTML = '<tr><td colspan="7" style="color: var(--danger);">Error loading campaigns.</td></tr>';
+  }
+}
+
+function renderCampaignGraph(idx) {
+  if (!window._lastCampaigns || !window._lastCampaigns[idx]) return;
+  const c = window._lastCampaigns[idx];
+  if (c.graph) {
+    // Generate mermaid from graph object if available
+    let mm = 'flowchart LR\\n';
+    c.graph.nodes.forEach(n => {
+      const clean = n.id.replace(/[^a-zA-Z0-9_]/g, '_');
+      mm += `    n_${clean}["${n.label.replace(/"/g, "'")}"]\\n`;
+    });
+    c.graph.edges.forEach(e => {
+      const src = e.source.replace(/[^a-zA-Z0-9_]/g, '_');
+      const tgt = e.target.replace(/[^a-zA-Z0-9_]/g, '_');
+      mm += `    n_${src} -->|"${e.relationship}"| n_${tgt}\\n`;
+    });
+    document.getElementById('graphMermaidCode').innerText = mm;
+  }
+}
+
+async function testSiem() {
+  const log = document.getElementById('siemLog');
+  const target = document.getElementById('siemTarget').value;
+  const url = document.getElementById('siemUrl').value.trim();
+  const token = document.getElementById('siemToken').value.trim();
+  const index = document.getElementById('siemIndex').value.trim();
+
+  if (!url) { alert('Please provide a SIEM Endpoint URL'); return; }
+
+  log.innerText = `Testing connection to ${target.toUpperCase()} at ${url}...`;
+  try {
+    const resp = await fetch('/api/siem/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        target_type: target,
+        endpoint_url: url,
+        auth_token: token || null,
+        index_name: index || 'phishguard_threats'
+      })
+    });
+    const data = await resp.json();
+    if (data.success) {
+      log.innerHTML = `<span style="color: var(--success); font-weight: bold;">✓ Connection SUCCESS (HTTP ${data.status_code})</span>\\n${data.response_body}`;
+    } else {
+      log.innerHTML = `<span style="color: var(--danger); font-weight: bold;">✗ Connection FAILED:</span> ${data.error_message}`;
+    }
+  } catch (err) {
+    log.innerHTML = `<span style="color: var(--danger);">Error: ${err.message}</span>`;
+  }
+}
+
+async function forwardSiem() {
+  const log = document.getElementById('siemLog');
+  if (!currentResult) { alert('Please upload and triage an email before forwarding.'); return; }
+
+  const target = document.getElementById('siemTarget').value;
+  const url = document.getElementById('siemUrl').value.trim();
+  const token = document.getElementById('siemToken').value.trim();
+  const index = document.getElementById('siemIndex').value.trim();
+
+  if (!url) { alert('Please provide a SIEM Endpoint URL'); return; }
+
+  log.innerText = `Streaming incident ${currentResult.scan_id} to ${target.toUpperCase()}...`;
+  try {
+    const resp = await fetch('/api/siem/forward', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        scan_id: currentResult.scan_id,
+        config: {
+          target_type: target,
+          endpoint_url: url,
+          auth_token: token || null,
+          index_name: index || 'phishguard_threats'
+        }
+      })
+    });
+    const data = await resp.json();
+    if (data.success) {
+      log.innerHTML = `<span style="color: var(--success); font-weight: bold;">✓ Incident Streamed (HTTP ${data.status_code})</span>\\nEvent ID: ${currentResult.scan_id}\\nEvents Delivered: ${data.events_forwarded}\\nServer Response: ${data.response_body}`;
+    } else {
+      log.innerHTML = `<span style="color: var(--danger); font-weight: bold;">✗ Forwarding FAILED:</span> ${data.error_message}`;
+    }
+  } catch (err) {
+    log.innerHTML = `<span style="color: var(--danger);">Error: ${err.message}</span>`;
   }
 }
 </script>
