@@ -34,6 +34,10 @@ from phishguard.reporters.html_reporter import HtmlReporter
 from phishguard.reporters.json_reporter import JsonReporter
 from phishguard.reporters.terminal import TerminalReporter
 from phishguard.rules.engine import RuleEngine
+from phishguard.soar.generator import RemediationEngine
+from phishguard.soar.models import PlatformType
+from phishguard.storage.database import IncidentDatabase
+from phishguard.storage.models import IncidentQueryFilter
 from phishguard.watcher.imap_watcher import ImapMailboxWatcher
 
 app = typer.Typer(
@@ -144,7 +148,7 @@ async def _run_analysis(
 
     scan_id = f"PG-{uuid.uuid4().hex[:8].upper()}"
 
-    return ScanResult(
+    scan_res = ScanResult(
         scan_id=scan_id,
         timestamp=datetime.now(timezone.utc),
         eml_file_path=parsed.file_path,
@@ -164,6 +168,13 @@ async def _run_analysis(
         written_explanation=written_explanation,
         remediation_steps=remediation_steps,
     )
+
+    try:
+        IncidentDatabase().save_scan(scan_res)
+    except Exception:
+        pass
+
+    return scan_res
 
 
 @app.command(name="scan")
@@ -520,6 +531,141 @@ def scan_dir(
             )
         except Exception as e:
             table.add_row(file_path.name, "-", f"[red]Error: {e}[/red]", "-", "[red]FAILED[/red]")
+
+    console.print(table)
+
+
+@app.command(name="remediate")
+def remediate(
+    target: str = typer.Argument(..., help="Path to .eml file OR historical Scan ID (e.g. PG-A1B2C3D4)"),
+    platform: str = typer.Option("all", "--platform", "-p", help="Target platform: m365, google, edr, firewall, all"),
+    output_dir: Optional[Path] = typer.Option(None, "--output-dir", "-o", help="Directory to save generated playbook scripts"),
+    offline: bool = typer.Option(False, "--offline", help="Run without external threat intelligence lookups"),
+):
+    """Generate automated SOAR remediation scripts (M365, Google Workspace, EDR, Firewalls)."""
+    db = IncidentDatabase()
+    result: Optional[ScanResult] = None
+
+    # Check if target is a Scan ID
+    if target.startswith("PG-") and not Path(target).exists():
+        result = db.get_scan(target)
+        if not result:
+            console.print(f"[bold red]Error:[/bold red] Scan ID not found in SOC database: {target}")
+            raise typer.Exit(code=1)
+    else:
+        eml_path = Path(target)
+        if not eml_path.exists():
+            console.print(f"[bold red]Error:[/bold red] Target file not found: {target}")
+            raise typer.Exit(code=1)
+        parser = EmlParser()
+        parsed = parser.parse_file(eml_path)
+        result = asyncio.run(_run_analysis(parsed, offline=offline))
+
+    engine = RemediationEngine()
+    plat_enum = PlatformType(platform.lower())
+    package = engine.generate_package(result, platforms=[plat_enum])
+
+    console.print(f"\n[bold cyan]🛡️ PHISHGUARD SOAR INCIDENT REMEDIATION PACKAGE[/bold cyan]")
+    console.print(f"[bold]Scan ID:[/bold] {package.scan_id} | [bold]Verdict:[/bold] {package.verdict} | [bold]Target:[/bold] {package.target_subject}")
+    console.print(f"[bold]Attacker Sender:[/bold] {package.sender_email} | [bold]Originating IP:[/bold] {package.originating_ip or 'Unknown'}\n")
+
+    if output_dir:
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+    from rich.syntax import Syntax
+    for action in package.actions:
+        console.print(f"[bold yellow]▶ {action.name}[/bold yellow] ([cyan]{action.platform.value.upper()}[/cyan] | [dim]{action.category}[/dim])")
+        console.print(f"[dim]{action.description}[/dim]")
+
+        syntax = Syntax(action.code, action.language, theme="monokai", line_numbers=True)
+        console.print(syntax)
+        console.print()
+
+        if output_dir:
+            clean_name = action.name.lower().replace(" ", "_").replace("/", "_").replace("(", "").replace(")", "")
+            ext = "ps1" if action.language == "powershell" else ("sh" if action.language == "bash" else ("kql" if action.language == "kql" else "txt"))
+            file_out = output_dir / f"{clean_name}.{ext}"
+            file_out.write_text(action.code, encoding="utf-8")
+
+    if output_dir:
+        console.print(f"[bold green]✓ Saved {len(package.actions)} remediation scripts to: [yellow]{output_dir}[/yellow][/bold green]")
+
+
+@app.command(name="hunt")
+def hunt(
+    query: Optional[str] = typer.Option(None, "--query", "-q", help="Free-text search in subject, sender, or content"),
+    ip: Optional[str] = typer.Option(None, "--ip", help="Originating IP address"),
+    domain: Optional[str] = typer.Option(None, "--domain", "-d", help="Sender or URL domain"),
+    hash_val: Optional[str] = typer.Option(None, "--hash", help="SHA256 hash of attachment or file"),
+    technique: Optional[str] = typer.Option(None, "--technique", "-t", help="MITRE ATT&CK technique ID (e.g. T1566.002)"),
+    verdict: Optional[str] = typer.Option(None, "--verdict", "-v", help="Verdict filter: MALICIOUS, SUSPICIOUS, CLEAN"),
+    limit: int = typer.Option(20, "--limit", "-l", help="Maximum records to return"),
+    stats: bool = typer.Option(False, "--stats", help="Display overall threat telemetry statistics"),
+):
+    """Threat hunt across historical triage records and query past incidents."""
+    db = IncidentDatabase()
+
+    if stats:
+        stat_data = db.get_stats()
+        console.print("\n[bold cyan]📊 PhishGuard SOC Threat Telemetry Statistics[/bold cyan]")
+        console.print(f"Total Scans Ingested: [bold]{stat_data['total_scans']}[/bold]")
+
+        vb = stat_data["verdict_breakdown"]
+        console.print(f"• [red]Malicious:[/red] {vb['malicious']}  |  [yellow]Suspicious:[/yellow] {vb['suspicious']}  |  [green]Clean:[/green] {vb['clean']}\n")
+
+        if stat_data["top_attacker_ips"]:
+            ip_table = Table(title="Top Attacker Originating IPs", show_header=True, header_style="bold magenta")
+            ip_table.add_column("Originating IP", style="bold red")
+            ip_table.add_column("Incidents", justify="right")
+            for item in stat_data["top_attacker_ips"]:
+                ip_table.add_row(item["ip"], str(item["count"]))
+            console.print(ip_table)
+
+        if stat_data["top_sender_domains"]:
+            dom_table = Table(title="Top Adversary Sender Domains", show_header=True, header_style="bold yellow")
+            dom_table.add_column("Sender Domain", style="bold yellow")
+            dom_table.add_column("Incidents", justify="right")
+            for item in stat_data["top_sender_domains"]:
+                dom_table.add_row(item["domain"], str(item["count"]))
+            console.print(dom_table)
+        return
+
+    filter_obj = IncidentQueryFilter(
+        query=query,
+        ip=ip,
+        domain=domain,
+        hash_val=hash_val,
+        technique=technique,
+        verdict=verdict,
+        limit=limit,
+    )
+    results = db.search_incidents(filter_obj)
+
+    if not results:
+        console.print("[yellow]No historical incidents matching query criteria.[/yellow]")
+        return
+
+    console.print(f"\n[bold cyan]Found {len(results)} historical incidents matching hunt parameters:[/bold cyan]\n")
+    table = Table(title="SOC Threat Hunting Results", show_header=True, header_style="bold cyan")
+    table.add_column("Scan ID", style="bold cyan")
+    table.add_column("Timestamp", style="dim", max_width=20)
+    table.add_column("Sender", style="dim", max_width=25)
+    table.add_column("Subject", max_width=35)
+    table.add_column("Origin IP", style="yellow")
+    table.add_column("Score", justify="right")
+    table.add_column("Verdict", justify="center")
+
+    for r in results:
+        v_color = "red" if r.verdict == "MALICIOUS" else ("yellow" if r.verdict == "SUSPICIOUS" else "green")
+        table.add_row(
+            r.scan_id,
+            r.timestamp[:19].replace("T", " "),
+            r.from_email[:25],
+            r.subject[:35],
+            r.originating_ip or "-",
+            f"{r.total_score}",
+            f"[{v_color}]{r.verdict}[/{v_color}]",
+        )
 
     console.print(table)
 

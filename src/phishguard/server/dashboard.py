@@ -174,8 +174,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <button class="tab-btn" onclick="switchTab('tabMitre')">MITRE ATT&CK</button>
       <button class="tab-btn" onclick="switchTab('tabHops')">Hop Route Tracer</button>
       <button class="tab-btn" onclick="switchTab('tabURLs')">URLs & Intel</button>
-      <button class="tab-btn" onclick="switchTab('tabAttachments')">Attachments</button>
+      <button class="tab-btn" onclick="switchTab('tabAttachments')">Attachments & YARA</button>
       <button class="tab-btn" onclick="switchTab('tabPlaybook')">Containment Playbook</button>
+      <button class="tab-btn" onclick="switchTab('tabRemediation')">⚡ SOAR Playbooks</button>
+      <button class="tab-btn" onclick="switchTab('tabHunting')">🔍 Threat Hunting</button>
     </div>
 
     <!-- Tab 1: Overview -->
@@ -246,6 +248,29 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <div class="card" style="border-left: 4px solid var(--success);">
         <h4 style="color: var(--success);">SOC Analyst Triage & Containment Playbook</h4>
         <ul id="playbookList" style="padding-left: 20px; font-size: 14px; line-height: 1.8;"></ul>
+      </div>
+    </div>
+
+    <!-- Tab 6: SOAR Remediation -->
+    <div id="tabRemediation" class="tab-content">
+      <div class="card" style="border-left: 4px solid var(--accent);">
+        <h4 style="color: var(--accent); margin-bottom: 12px;">Automated Multi-Platform SOAR Containment Playbooks</h4>
+        <div id="remediationList" style="display: flex; flex-direction: column; gap: 16px;"></div>
+      </div>
+    </div>
+
+    <!-- Tab 7: Threat Hunting -->
+    <div id="tabHunting" class="tab-content">
+      <div class="card" style="border-left: 4px solid var(--warning);">
+        <h4 style="color: var(--warning); margin-bottom: 12px;">SOC Threat Hunting & Historical Incident Search</h4>
+        <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+          <input id="huntSearch" type="text" placeholder="Search by domain, sender, IP, or keyword (e.g. PayPal, 185.220...)" style="flex: 1; padding: 10px; background: var(--bg-base); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 6px;">
+          <button class="btn" onclick="executeHunt()" style="background: var(--accent); color: #0b0f19; font-weight: 700;">Search</button>
+        </div>
+        <table>
+          <thead><tr><th>Scan ID</th><th>Timestamp</th><th>Sender</th><th>Subject</th><th>Origin IP</th><th>Score</th><th>Verdict</th></tr></thead>
+          <tbody id="huntBody"><tr><td colspan="7" style="color: var(--text-secondary);">Click Search or enter a query to hunt past incidents.</td></tr></tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -377,6 +402,9 @@ function renderResults(res) {
   // Playbook
   const playbookList = document.getElementById('playbookList');
   playbookList.innerHTML = res.remediation_steps.map(s => `<li>${s}</li>`).join('');
+
+  // Load SOAR Remediation
+  loadRemediation(res.scan_id);
 }
 
 function switchTab(tabId) {
@@ -414,6 +442,61 @@ async function copyIOCs() {
   const csvData = await resp.text();
   navigator.clipboard.writeText(csvData);
   alert('All IOCs copied to clipboard in CSV format!');
+}
+
+async function loadRemediation(scanId) {
+  const container = document.getElementById('remediationList');
+  try {
+    const resp = await fetch(`/api/remediate/${scanId}`);
+    const data = await resp.json();
+    if (!data.actions || data.actions.length === 0) {
+      container.innerHTML = '<p style="color: var(--text-secondary);">No automated playbooks generated.</p>';
+      return;
+    }
+    container.innerHTML = data.actions.map((act, idx) => `
+      <div style="background: var(--bg-surface-elevated); border: 1px solid var(--border-color); border-radius: 8px; padding: 14px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <div>
+            <strong style="color: var(--accent);">${act.name}</strong> 
+            <span class="pill danger" style="margin-left: 8px;">${act.platform.toUpperCase()}</span>
+            <span class="pill warning">${act.category}</span>
+          </div>
+          <button class="btn" onclick="navigator.clipboard.writeText(document.getElementById('code_${idx}').innerText); alert('Copied script to clipboard!');">Copy Script</button>
+        </div>
+        <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 8px;">${act.description}</p>
+        <pre style="background: var(--bg-base); padding: 12px; border-radius: 6px; overflow-x: auto; font-family: monospace; font-size: 12px; color: #a5b4fc;"><code id="code_${idx}">${act.code.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre>
+      </div>
+    `).join('');
+  } catch (err) {
+    container.innerHTML = '<p style="color: var(--danger);">Failed to load remediation playbooks.</p>';
+  }
+}
+
+async function executeHunt() {
+  const q = document.getElementById('huntSearch').value.trim();
+  const huntBody = document.getElementById('huntBody');
+  huntBody.innerHTML = '<tr><td colspan="7">Searching SOC database...</td></tr>';
+  try {
+    const resp = await fetch(`/api/hunt?query=${encodeURIComponent(q)}`);
+    const data = await resp.json();
+    if (!data.results || data.results.length === 0) {
+      huntBody.innerHTML = '<tr><td colspan="7" style="color: var(--warning);">No historical incidents found.</td></tr>';
+      return;
+    }
+    huntBody.innerHTML = data.results.map(r => `
+      <tr>
+        <td class="code" style="color: var(--accent); font-weight: bold;">${r.scan_id}</td>
+        <td>${r.timestamp.substring(0, 19).replace('T', ' ')}</td>
+        <td>${r.from_email}</td>
+        <td>${r.subject}</td>
+        <td class="code">${r.originating_ip || '-'}</td>
+        <td><strong>${r.total_score}</strong></td>
+        <td><span class="pill ${r.verdict === 'MALICIOUS' ? 'danger' : (r.verdict === 'SUSPICIOUS' ? 'warning' : 'success')}">${r.verdict}</span></td>
+      </tr>
+    `).join('');
+  } catch (err) {
+    huntBody.innerHTML = '<tr><td colspan="7" style="color: var(--danger);">Error executing hunt query.</td></tr>';
+  }
 }
 </script>
 </body>

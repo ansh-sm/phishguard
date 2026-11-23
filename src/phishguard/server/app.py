@@ -15,6 +15,10 @@ from phishguard.models.report import ScanResult
 from phishguard.parser.eml_parser import EmlParser
 from phishguard.reporters.html_reporter import HtmlReporter
 from phishguard.server.dashboard import DASHBOARD_HTML
+from phishguard.soar.generator import RemediationEngine
+from phishguard.soar.models import PlatformType, RemediationPackage
+from phishguard.storage.database import IncidentDatabase
+from phishguard.storage.models import IncidentQueryFilter, IncidentSummary
 
 app = FastAPI(
     title="PhishGuard SOC API",
@@ -120,3 +124,50 @@ async def export_html(scan_id: str = Query(...)):
         raise HTTPException(status_code=404, detail="Scan ID not found in active session cache")
     html_data = html_reporter.generate(SCAN_CACHE[scan_id])
     return HTMLResponse(content=html_data)
+
+
+@app.get("/api/remediate/{scan_id}", response_model=RemediationPackage)
+async def get_remediation_package(
+    scan_id: str,
+    platform: str = Query("all", description="Target platform: m365, google, edr, firewall, all"),
+):
+    """Generate multi-platform SOAR remediation playbooks for a scan."""
+    db = IncidentDatabase()
+    result = SCAN_CACHE.get(scan_id) or db.get_scan(scan_id)
+    if not result:
+        raise HTTPException(status_code=404, detail=f"Incident '{scan_id}' not found")
+
+    engine = RemediationEngine()
+    plat_enum = PlatformType(platform.lower())
+    return engine.generate_package(result, platforms=[plat_enum])
+
+
+@app.get("/api/hunt")
+async def hunt_incidents(
+    query: Optional[str] = Query(None, description="Free-text search in subject or sender"),
+    ip: Optional[str] = Query(None, description="Originating IP"),
+    domain: Optional[str] = Query(None, description="Sender or URL domain"),
+    hash_val: Optional[str] = Query(None, description="Attachment or file SHA256"),
+    technique: Optional[str] = Query(None, description="MITRE ATT&CK technique ID"),
+    verdict: Optional[str] = Query(None, description="Verdict: MALICIOUS, SUSPICIOUS, CLEAN"),
+    limit: int = Query(50, description="Max results"),
+):
+    """Query historical incidents across threat intelligence dimensions."""
+    db = IncidentDatabase()
+    filt = IncidentQueryFilter(
+        query=query, ip=ip, domain=domain,
+        hash_val=hash_val, technique=technique,
+        verdict=verdict, limit=limit
+    )
+    results = db.search_incidents(filt)
+    return {
+        "count": len(results),
+        "results": [r.model_dump() for r in results],
+    }
+
+
+@app.get("/api/stats")
+async def get_incident_stats():
+    """Returns SOC triage metrics and threat statistics."""
+    db = IncidentDatabase()
+    return db.get_stats()
