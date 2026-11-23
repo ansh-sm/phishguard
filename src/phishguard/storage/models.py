@@ -2,24 +2,39 @@
 Data models for the SOC incident database and threat hunting queries.
 """
 
-from typing import Optional
-from pydantic import BaseModel, Field
+from typing import Any, Optional
+from pydantic import BaseModel, Field, model_validator
 
 
 class IncidentSummary(BaseModel):
     """Compact summary of a historical triage record for threat hunting."""
     scan_id: str
     timestamp: str
-    subject: str
-    from_email: str
-    from_domain: str
+    subject: str = "(No Subject)"
+    from_email: str = ""
+    from_domain: str = ""
     originating_ip: Optional[str] = None
-    verdict: str
-    severity: str
-    total_score: float
-    file_sha256: str
+    recipient: Optional[str] = None
+    verdict: str = "CLEAN"
+    severity: str = "LOW"
+    total_score: float = 0.0
+    confidence: Optional[str] = "HIGH"
+    file_sha256: Optional[str] = ""
     matched_rules_count: int = 0
     mitre_count: int = 0
+    mitre_techniques: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def handle_score_alias(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "score" in data and "total_score" not in data:
+                data["total_score"] = float(data["score"])
+        return data
+
+    @property
+    def score(self) -> float:
+        return self.total_score
 
 
 class IncidentQueryFilter(BaseModel):

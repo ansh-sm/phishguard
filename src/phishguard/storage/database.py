@@ -180,6 +180,7 @@ class IncidentDatabase:
                         file_sha256=r["file_sha256"],
                         matched_rules_count=len(rules),
                         mitre_count=len(mitre),
+                        mitre_techniques=",".join(mitre),
                     )
                 )
 
