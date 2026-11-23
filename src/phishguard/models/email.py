@@ -100,6 +100,8 @@ class EmailMetadata(BaseModel):
                 data["from_email"] = data["from_address"]
             if "reply_to" in data and not data.get("reply_to_email"):
                 data["reply_to_email"] = data["reply_to"]
+            if "to" in data and not data.get("to_emails"):
+                data["to_emails"] = data["to"] if isinstance(data["to"], list) else [data["to"]]
         return data
 
     @property
@@ -109,3 +111,7 @@ class EmailMetadata(BaseModel):
     @property
     def reply_to(self) -> Optional[str]:
         return self.reply_to_email or self.reply_to_raw
+
+    @property
+    def to(self) -> list[str]:
+        return self.to_emails

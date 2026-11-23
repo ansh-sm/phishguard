@@ -34,6 +34,10 @@ class UrlArtifact(BaseModel):
     risk_score: float = Field(default=0.0, description="Calculated risk score for this individual URL (0-100)")
     risk_reasons: list[str] = Field(default_factory=list)
 
+    @property
+    def flags(self) -> list[str]:
+        return self.risk_reasons
+
 
 class AttachmentArtifact(BaseModel):
     """Forensic metadata for an extracted email attachment."""
@@ -58,6 +62,10 @@ class AttachmentArtifact(BaseModel):
 
     risk_score: float = Field(default=0.0, description="Calculated risk score for attachment (0-100)")
     risk_reasons: list[str] = Field(default_factory=list)
+
+    @property
+    def file_type(self) -> str:
+        return self.detected_mime or self.original_mime
 
 
 class QuishingResult(BaseModel):

@@ -28,6 +28,10 @@ class RuleMatch(BaseModel):
     matched_fields: list[str] = Field(default_factory=list)
     evidence: list[str] = Field(default_factory=list)
 
+    @property
+    def name(self) -> str:
+        return self.rule_name
+
 
 class MitreTechnique(BaseModel):
     """Represents an observable adversary technique mapped to MITRE ATT&CK."""
@@ -38,6 +42,10 @@ class MitreTechnique(BaseModel):
     confidence: str = Field(default="HIGH", description="HIGH, MEDIUM, LOW")
     evidence: list[str] = Field(default_factory=list)
     attack_url: str = Field(description="Official MITRE ATT&CK technique reference URL")
+
+    @property
+    def name(self) -> str:
+        return self.technique_name
 
 
 class VerdictEnum(str, Enum):
@@ -60,6 +68,22 @@ class ScoreBreakdown(BaseModel):
     attachment_score: float = Field(default=0.0, description="Attachment forensic risk sub-score (0-20)")
     content_score: float = Field(default=0.0, description="Content, Social Engineering & Urgency sub-score (0-15)")
     total_score: float = Field(default=0.0, description="Aggregated PhishScore (0-100)")
+
+    @property
+    def headers(self) -> float:
+        return self.header_score
+
+    @property
+    def urls(self) -> float:
+        return self.url_score
+
+    @property
+    def attachments(self) -> float:
+        return self.attachment_score
+
+    @property
+    def content(self) -> float:
+        return self.content_score
 
 
 class ScanResult(BaseModel):
@@ -88,3 +112,23 @@ class ScanResult(BaseModel):
     mitre_attack: list[MitreTechnique] = Field(default_factory=list, description="Mapped MITRE ATT&CK techniques")
     written_explanation: str = Field(description="SOC plain-English incident summary")
     remediation_steps: list[str] = Field(default_factory=list)
+
+    @property
+    def confidence(self) -> float:
+        return self.confidence_percentage
+
+    @property
+    def rules_matched(self) -> list[RuleMatch]:
+        return self.matched_rules
+
+    @property
+    def mitre_techniques(self) -> list[MitreTechnique]:
+        return self.mitre_attack
+
+    @property
+    def flags(self) -> list[str]:
+        return self.key_findings
+
+    @property
+    def score_breakdown(self) -> ScoreBreakdown:
+        return self.score
