@@ -46,6 +46,7 @@ htmlcov/
 # Local cache / databases
 *.db
 *.sqlite3
+data/
 cache/
 logs/
 

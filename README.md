@@ -2,11 +2,14 @@
 ### Enterprise-Grade Automated Phishing Detection & Threat Intelligence Platform
 
 [![Python Version](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue.svg)](https://www.python.org/)
-[![Tests Passing](https://img.shields.io/badge/tests-53%20passed-brightgreen.svg)]()
+[![Tests Passing](https://img.shields.io/badge/tests-69%20passed-brightgreen.svg)]()
 [![Type Checked](https://img.shields.io/badge/types-strict%20pydantic%20v2-blueviolet.svg)]()
 [![MITRE ATT&CK](https://img.shields.io/badge/MITRE%20ATT%26CK-v14%20Enterprise-red.svg)]()
 [![STIX 2.1](https://img.shields.io/badge/OASIS-STIX%202.1%20Compliant-orange.svg)]()
 [![Detection Rules](https://img.shields.io/badge/rules-Sigma%2FYARA%20YAML-purple.svg)]()
+[![SOAR Engine](https://img.shields.io/badge/SOAR-M365%20%7C%20GAM%20%7C%20EDR%20%7C%20Firewall-blue.svg)]()
+[![YARA Inspection](https://img.shields.io/badge/forensics-YARA%20Binary%20Scanner-darkred.svg)]()
+[![Threat Hunting](https://img.shields.io/badge/hunting-SQLite%20WAL%20Engine-teal.svg)]()
 [![Alerts](https://img.shields.io/badge/alerts-Slack%20%7C%20Discord%20%7C%20Teams%20%7C%20SOAR-blue.svg)]()
 [![Docker](https://img.shields.io/badge/docker-ready-2496ED.svg)]()
 [![FastAPI](https://img.shields.io/badge/dashboard-FastAPI%20%2B%20Web%20UI-teal.svg)]()
@@ -60,6 +63,27 @@ $$\text{Ingest (.EML)} \longrightarrow \text{Deconstruct} \longrightarrow \text{
 - Weighted heuristic matrix (0–100) aggregating Header, URL/Intel, Attachment, and Content risk vectors.
 - Automated generation of a plain-English SOC analyst explanation and immediate containment playbook.
 - Rich terminal UI, SIEM-compatible JSON (Splunk/Elastic/Sentinel), and self-contained executive HTML incident reports.
+
+### 8. SOAR Incident Remediation Engine
+- Automated production remediation playbooks tailored across enterprise operational tiers:
+  - **Microsoft 365 Exchange Online**: PowerShell `New-ComplianceSearch`, `New-ComplianceSearchAction -Purge -PurgeType HardDelete`, and Tenant Allow/Block List (TABL) rules.
+  - **Google Workspace**: Google Apps Manager (`gam`) tenant-wide purge scripts and Gmail content compliance filters.
+  - **Endpoint Detection & Response (EDR)**: Microsoft Defender for Endpoint Advanced Hunting KQL queries and CrowdStrike Falcon Event Search queries.
+  - **Perimeter Defenses**: Palo Alto Networks CLI block rules, Cisco ASA access-list drop directives, and BIND9 RPZ DNS sinkhole zones.
+
+### 9. Binary YARA Signature Scanner
+- In-memory regex and byte-sequence scanning for malicious payload characteristics:
+  - Disguised Portable Executables (MZ header + PE signature validation).
+  - Suspicious Windows API imports for shellcode injection (`VirtualAlloc`, `WriteProcessMemory`, `CreateRemoteThread`).
+  - Obfuscated PowerShell execution cradles (`-EncodedCommand`, `FromBase64String`, `DownloadString`, `IEX`).
+  - Malicious PDF embedded actions (`/JavaScript`, `/Launch`, `/OpenAction`).
+  - Weaponized Office VBA auto-exec routines (`AutoOpen`, `Document_Open`, `Workbook_Open`).
+  - Dangerous LNK shortcut stagers (`powershell.exe`, `cmd.exe /c`).
+
+### 10. SOC Threat Hunting Database
+- Embedded, zero-maintenance SQLite incident database with Write-Ahead Logging (WAL) and automated multi-index optimization.
+- Retrospective hunting across historical email incidents by sender domain, originating IP, file SHA-256 hash, MITRE technique, and custom full-text query.
+- Instant SOC telemetry computation for phishing trends, high-risk origin IPs, and top targeted mailboxes.
 
 ---
 
@@ -154,7 +178,35 @@ phishguard alert-test --webhook-url "https://hooks.slack.com/services/XXX" --web
 phishguard scan samples/phishing_account_alert.eml --webhook-url "https://hooks.slack.com/services/XXX" --webhook-type slack --min-score 60
 ```
 
-### 11. Production Container Deployment (Docker & Compose)
+### 11. Multi-Platform SOAR Playbook Generation
+```bash
+# Generate M365 PowerShell, Google Workspace, EDR KQL, and Firewall containment scripts
+phishguard remediate samples/phishing_account_alert.eml --platform all
+
+# Output M365 Exchange purge script to a file
+phishguard remediate samples/phishing_account_alert.eml --platform m365 --output purge_m365.ps1
+
+# Generate Defender EDR KQL and CrowdStrike Falcon hunting queries
+phishguard remediate samples/weaponized_macro_attachment.eml --platform edr
+```
+
+### 12. Retrospective Threat Hunting & Telemetry
+```bash
+# Display SOC incident metrics and telemetry overview
+phishguard hunt --stats
+
+# Hunt for historical incidents by malicious originating IP
+phishguard hunt --ip 198.51.100.23
+
+# Hunt for incidents by weaponized attachment SHA-256 hash
+phishguard hunt --hash 4b0e5922d99d14ec7b70c32b557b7722744315bb7c419c855a8beffc4854caec
+
+# Filter by MITRE ATT&CK technique or free-text search
+phishguard hunt --technique T1566.002
+phishguard hunt --query "paypal"
+```
+
+### 13. Production Container Deployment (Docker & Compose)
 ```bash
 # Build and run API & Web Console
 docker-compose up -d phishguard-api
@@ -167,7 +219,7 @@ docker-compose --profile watcher up -d
 
 ## 🧪 Testing Suite
 
-PhishGuard SOC includes a comprehensive automated test suite with 53 unit, integration, and end-to-end tests:
+PhishGuard SOC includes a comprehensive automated test suite with 69 unit, integration, and end-to-end tests:
 
 ```bash
 pytest -v
@@ -176,57 +228,76 @@ pytest -v
 ```text
 ============================= test session starts =============================
 platform win32 -- Python 3.14.4, pytest-9.2.0, pluggy-1.7.0
-tests/test_alerts.py::test_should_alert_logic PASSED                     [  2%]
-tests/test_alerts.py::test_build_slack_payload PASSED                    [  4%]
-tests/test_alerts.py::test_build_discord_payload PASSED                  [  6%]
-tests/test_alerts.py::test_build_teams_payload PASSED                    [  8%]
-tests/test_alerts.py::test_build_generic_payload_with_hmac PASSED        [ 10%]
-tests/test_alerts.py::test_send_alert_mock_transport PASSED              [ 12%]
-tests/test_cli_rules_alerts.py::test_cli_test_rules PASSED               [ 14%]
-tests/test_cli_rules_alerts.py::test_cli_alert_test_invalid_url PASSED   [ 16%]
-tests/test_cli_rules_alerts.py::test_api_get_rules PASSED                [ 18%]
-tests/test_e2e_pipeline.py::test_e2e_quishing_email PASSED               [ 20%]
-tests/test_e2e_pipeline.py::test_e2e_ceo_fraud_email PASSED              [ 22%]
-tests/test_e2e_pipeline.py::test_e2e_weaponized_attachment PASSED        [ 24%]
-tests/test_engine_scorer.py::test_scorer_phishing_account_alert PASSED   [ 26%]
-tests/test_engine_scorer.py::test_scorer_benign_newsletter PASSED        [ 28%]
-tests/test_forensics_attachments_quishing.py::test_mime_spoofing_detection PASSED [ 30%]
-tests/test_forensics_attachments_quishing.py::test_double_extension_detection PASSED [ 32%]
-tests/test_forensics_attachments_quishing.py::test_archive_inspection_concealed_payload PASSED [ 34%]
-tests/test_forensics_attachments_quishing.py::test_quishing_detection PASSED [ 36%]
-tests/test_forensics_auth_spoofing.py::test_auth_parser_phishing_sample PASSED [ 38%]
-tests/test_forensics_auth_spoofing.py::test_auth_parser_benign_sample PASSED [ 40%]
-tests/test_forensics_auth_spoofing.py::test_spoof_detection_typosquatting PASSED [ 42%]
-tests/test_forensics_auth_spoofing.py::test_spoof_detection_homoglyph_and_punycode PASSED [ 44%]
-tests/test_forensics_headers.py::test_received_hop_parsing PASSED        [ 46%]
-tests/test_forensics_headers.py::test_originating_ip_identification PASSED [ 48%]
-tests/test_forensics_headers.py::test_duplicate_from_header_detection PASSED [ 50%]
-tests/test_forensics_urls.py::test_defang_and_refang PASSED              [ 52%]
-tests/test_forensics_urls.py::test_entropy_calculation PASSED            [ 54%]
-tests/test_forensics_urls.py::test_extract_and_analyze_phishing_email PASSED [ 56%]
-tests/test_forensics_urls.py::test_extract_and_analyze_benign_email PASSED [ 58%]
-tests/test_generator.py::test_generate_all_lure_types PASSED             [ 60%]
-tests/test_generator.py::test_invalid_lure_type_raises_error PASSED      [ 62%]
-tests/test_intel.py::test_intel_cache_lifecycle PASSED                   [ 64%]
-tests/test_intel.py::test_threat_intel_pipeline_offline_with_cache PASSED [ 66%]
-tests/test_iocs.py::test_ioc_extraction_and_formats PASSED               [ 68%]
-tests/test_mitre.py::test_mitre_mapping_phishing_account_alert PASSED    [ 70%]
-tests/test_mitre.py::test_mitre_mapping_weaponized_attachment PASSED     [ 72%]
-tests/test_mitre.py::test_mitre_mapping_benign_newsletter PASSED         [ 74%]
-tests/test_parser.py::test_parse_phishing_account_alert PASSED           [ 76%]
-tests/test_parser.py::test_parse_benign_newsletter PASSED                [ 78%]
-tests/test_reporters.py::test_json_reporter_export PASSED                [ 80%]
-tests/test_reporters.py::test_html_reporter_export PASSED                [ 82%]
-tests/test_rules_engine.py::test_rule_condition_operators PASSED         [ 84%]
-tests/test_rules_engine.py::test_rule_boolean_logic PASSED               [ 86%]
-tests/test_rules_engine.py::test_load_enterprise_rules_from_dir PASSED   [ 88%]
-tests/test_rules_engine.py::test_enterprise_rules_against_sample_corpus PASSED [ 90%]
-tests/test_server_api.py::test_api_health PASSED                         [ 92%]
-tests/test_server_api.py::test_api_scan_upload PASSED                     [ 94%]
-tests/test_server_api.py::test_api_export_endpoints PASSED               [ 96%]
-tests/test_virustotal_otx.py::test_virustotal_client_mock PASSED          [ 98%]
-tests/test_watcher.py::test_watcher_poll_once_with_mock_imap PASSED       [100%]
-======================== 53 passed, 1 warning in 4.12s ========================
+tests/test_alerts.py::test_should_alert_logic PASSED                     [  1%]
+tests/test_alerts.py::test_build_slack_payload PASSED                    [  2%]
+tests/test_alerts.py::test_build_discord_payload PASSED                  [  4%]
+tests/test_alerts.py::test_build_teams_payload PASSED                    [  5%]
+tests/test_alerts.py::test_build_generic_payload_with_hmac PASSED        [  7%]
+tests/test_alerts.py::test_send_alert_mock_transport PASSED              [  8%]
+tests/test_cli_rules_alerts.py::test_cli_test_rules PASSED               [ 10%]
+tests/test_cli_rules_alerts.py::test_cli_alert_test_invalid_url PASSED   [ 11%]
+tests/test_cli_rules_alerts.py::test_api_get_rules PASSED                [ 13%]
+tests/test_cli_session5.py::test_cli_remediate_sample_eml PASSED         [ 14%]
+tests/test_cli_session5.py::test_cli_hunt_and_stats PASSED               [ 15%]
+tests/test_cli_session5.py::test_api_hunt_and_stats PASSED               [ 17%]
+tests/test_e2e_pipeline.py::test_e2e_quishing_email PASSED               [ 18%]
+tests/test_e2e_pipeline.py::test_e2e_ceo_fraud_email PASSED              [ 20%]
+tests/test_e2e_pipeline.py::test_e2e_weaponized_attachment PASSED        [ 21%]
+tests/test_engine_scorer.py::test_scorer_phishing_account_alert PASSED   [ 23%]
+tests/test_engine_scorer.py::test_scorer_benign_newsletter PASSED        [ 24%]
+tests/test_forensics_attachments_quishing.py::test_mime_spoofing_detection PASSED [ 26%]
+tests/test_forensics_attachments_quishing.py::test_double_extension_detection PASSED [ 27%]
+tests/test_forensics_attachments_quishing.py::test_archive_inspection_concealed_payload PASSED [ 28%]
+tests/test_forensics_attachments_quishing.py::test_quishing_detection PASSED [ 30%]
+tests/test_forensics_auth_spoofing.py::test_auth_parser_phishing_sample PASSED [ 31%]
+tests/test_forensics_auth_spoofing.py::test_auth_parser_benign_sample PASSED [ 33%]
+tests/test_forensics_auth_spoofing.py::test_spoof_detection_typosquatting PASSED [ 34%]
+tests/test_forensics_auth_spoofing.py::test_spoof_detection_homoglyph_and_punycode PASSED [ 36%]
+tests/test_forensics_headers.py::test_received_hop_parsing PASSED        [ 37%]
+tests/test_forensics_headers.py::test_originating_ip_identification PASSED [ 39%]
+tests/test_forensics_headers.py::test_duplicate_from_header_detection PASSED [ 40%]
+tests/test_forensics_urls.py::test_defang_and_refang PASSED              [ 42%]
+tests/test_forensics_urls.py::test_entropy_calculation PASSED            [ 43%]
+tests/test_forensics_urls.py::test_extract_and_analyze_phishing_email PASSED [ 44%]
+tests/test_forensics_urls.py::test_extract_and_analyze_benign_email PASSED [ 46%]
+tests/test_generator.py::test_generate_all_lure_types PASSED             [ 47%]
+tests/test_generator.py::test_invalid_lure_type_raises_error PASSED      [ 49%]
+tests/test_intel.py::test_intel_cache_lifecycle PASSED                   [ 50%]
+tests/test_intel.py::test_threat_intel_pipeline_offline_with_cache PASSED [ 52%]
+tests/test_iocs.py::test_ioc_extraction_and_formats PASSED               [ 53%]
+tests/test_mitre.py::test_mitre_mapping_phishing_account_alert PASSED    [ 55%]
+tests/test_mitre.py::test_mitre_mapping_weaponized_attachment PASSED     [ 56%]
+tests/test_mitre.py::test_mitre_mapping_benign_newsletter PASSED         [ 57%]
+tests/test_parser.py::test_parse_phishing_account_alert PASSED           [ 59%]
+tests/test_parser.py::test_parse_benign_newsletter PASSED                [ 60%]
+tests/test_reporters.py::test_json_reporter_export PASSED                [ 62%]
+tests/test_reporters.py::test_html_reporter_export PASSED                [ 63%]
+tests/test_rules_engine.py::test_rule_condition_operators PASSED         [ 65%]
+tests/test_rules_engine.py::test_rule_boolean_logic PASSED               [ 66%]
+tests/test_rules_engine.py::test_load_enterprise_rules_from_dir PASSED   [ 68%]
+tests/test_rules_engine.py::test_enterprise_rules_against_sample_corpus PASSED [ 69%]
+tests/test_server_api.py::test_health_endpoint PASSED                    [ 71%]
+tests/test_server_api.py::test_dashboard_ui_endpoint PASSED              [ 72%]
+tests/test_server_api.py::test_api_scan_upload PASSED                    [ 73%]
+tests/test_soar_remediation.py::test_remediation_engine_all_platforms PASSED [ 75%]
+tests/test_soar_remediation.py::test_remediation_m365_specific PASSED    [ 76%]
+tests/test_soar_remediation.py::test_remediation_edr_kql PASSED          [ 78%]
+tests/test_soar_remediation.py::test_remediation_firewall_rules PASSED   [ 79%]
+tests/test_threat_hunting.py::test_save_and_retrieve_incident PASSED     [ 81%]
+tests/test_threat_hunting.py::test_threat_hunting_search_filters PASSED  [ 82%]
+tests/test_threat_hunting.py::test_telemetry_stats PASSED                [ 84%]
+tests/test_virustotal_otx.py::test_vt_url_to_id PASSED                   [ 85%]
+tests/test_virustotal_otx.py::test_virustotal_cache_hit PASSED           [ 86%]
+tests/test_virustotal_otx.py::test_otx_ip_cache_hit PASSED               [ 88%]
+tests/test_watcher.py::test_watcher_process_raw_message_malicious PASSED [ 89%]
+tests/test_watcher.py::test_watcher_poll_once_with_mock_imap PASSED      [ 91%]
+tests/test_yara_scanner.py::test_yara_detect_disguised_pe PASSED         [ 92%]
+tests/test_yara_scanner.py::test_yara_detect_injection_apis PASSED       [ 94%]
+tests/test_yara_scanner.py::test_yara_detect_powershell_stager PASSED    [ 95%]
+tests/test_yara_scanner.py::test_yara_detect_pdf_active_content PASSED   [ 97%]
+tests/test_yara_scanner.py::test_yara_detect_vba_autoexec PASSED         [ 98%]
+tests/test_yara_scanner.py::test_yara_detect_lnk_stager PASSED           [100%]
+======================== 69 passed, 1 warning in 4.69s ========================
 ```
 
 ---
@@ -260,6 +331,7 @@ phishguard/
 │       │   ├── spoofing.py         # Typosquatting & Unicode homoglyphs
 │       │   ├── urls.py             # URL defanging & anchor deception
 │       │   ├── attachments.py      # Magic bytes & archive inspection
+│       │   ├── yara_scanner.py     # Binary signature scanner & PE/macro patterns
 │       │   ├── quishing.py         # QR code phishing detector
 │       │   └── iocs.py             # CSV, JSON & STIX 2.1 IOC extraction
 │       ├── rules/                  # Custom detection rule engine
@@ -268,6 +340,12 @@ phishguard/
 │       ├── alerts/                 # Real-time SOC alerting system
 │       │   ├── models.py           # AlertConfig & WebhookType definitions
 │       │   └── dispatcher.py       # Slack, Discord, Teams & HMAC SOAR dispatcher
+│       ├── soar/                   # SOAR Playbook & Automated Remediation
+│       │   ├── models.py           # RemediationAction & RemediationPackage schemas
+│       │   └── generator.py        # M365 PowerShell, GAM, EDR KQL, Firewall scripts
+│       ├── storage/                # SOC Threat Hunting Incident Database
+│       │   ├── models.py           # IncidentSummary & IncidentQueryFilter
+│       │   └── database.py         # SQLite WAL persistence & historical query engine
 │       ├── intel/                  # Threat intelligence subsystem
 │       │   ├── cache.py            # SQLite TTL persistent cache
 │       │   ├── urlhaus.py          # Abuse.ch API client
@@ -285,12 +363,12 @@ phishguard/
 │       │   └── imap_watcher.py     # Automated IMAP listener & quarantine daemon
 │       ├── server/                 # REST API & Web Dashboard
 │       │   ├── app.py              # FastAPI endpoints & OpenAPI docs
-│       │   └── dashboard.py        # Single-page drag & drop Web UI
+│       │   └── dashboard.py        # Single-page drag & drop Web UI with Remediation/Hunting
 │       └── reporters/              # Visualization and report generation
 │           ├── terminal.py         # Color-coded Rich terminal UI
 │           ├── json_reporter.py    # SIEM-compatible JSON exporter
 │           └── html_reporter.py    # Standalone executive HTML report
-├── tests/                          # Automated test suite (53 tests)
+├── tests/                          # Automated test suite (69 tests)
 └── samples/                        # Real-world test email corpus (5 samples)
 ```
 
