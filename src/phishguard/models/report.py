@@ -132,3 +132,15 @@ class ScanResult(BaseModel):
     @property
     def score_breakdown(self) -> ScoreBreakdown:
         return self.score
+
+    @property
+    def total_score(self) -> float:
+        return self.score.total_score if hasattr(self.score, "total_score") else float(self.score)
+
+    @property
+    def file_hash(self) -> str:
+        return self.eml_file_hash_sha256
+
+    @property
+    def recommendations(self) -> list[str]:
+        return self.remediation_steps
