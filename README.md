@@ -2,9 +2,11 @@
 ### Enterprise-Grade Automated Phishing Detection & Threat Intelligence Platform
 
 [![Python Version](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13%20%7C%203.14-blue.svg)](https://www.python.org/)
-[![Tests Passing](https://img.shields.io/badge/tests-106%20passed-brightgreen.svg)]()
+[![Tests Passing](https://img.shields.io/badge/tests-125%20passed-brightgreen.svg)]()
 [![Type Checked](https://img.shields.io/badge/types-strict%20pydantic%20v2-blueviolet.svg)]()
 [![MITRE ATT&CK](https://img.shields.io/badge/MITRE%20ATT%26CK-v14%20Enterprise-red.svg)]()
+[![URL Sandbox](https://img.shields.io/badge/sandbox-Headless%20DOM%20Detonation-red.svg)]()
+[![Case Management](https://img.shields.io/badge/SOC-Case%20Management%20Queue-blue.svg)]()
 [![AI Triage](https://img.shields.io/badge/AI%20Triage-NLP%20%26%20Cognitive%20Intent-purple.svg)]()
 [![DNS Resolver](https://img.shields.io/badge/forensics-Live%20SPF%2FDMARC%20Audit-teal.svg)]()
 [![STIX 2.1](https://img.shields.io/badge/OASIS-STIX%202.1%20Compliant-orange.svg)]()
@@ -114,7 +116,20 @@ $$\text{Ingest (.EML)} \longrightarrow \text{Deconstruct} \longrightarrow \text{
   - Authoritative SPF (`v=spf1`) record extraction and RFC mechanism parsing (`ip4`, `ip6`, `include`, `all`) with exact CIDR network matching.
   - DMARC (`v=DMARC1`) policy enforcement inspection (`p=reject`, `p=quarantine`, `p=none`, `pct`, `rua`).
   - Active detection of exploitable domain misconfigurations (e.g. permissive `+all`, missing DMARC enforcement, missing MX records).
-  - Automated generation of Mermaid.js topological attack graphs illustrating the full attack path from threat actor to targeted mailboxes.
+
+### 15. Dynamic URL Detonation Sandbox & DOM Analysis
+- Headless detonation and DOM inspection of untrusted links extracted from suspicious emails:
+  - Recursive HTTP redirect chain tracking (301, 302, 307, 308) and client-side HTML `<meta http-equiv="refresh">` redirection.
+  - Interactive DOM form analysis identifying credential harvesting password input fields (`<input type="password">`) and cross-origin credential exfiltration targets (`action="http://attacker.host/drop.php"`).
+  - Phishing Brand Kit Clone detector (identifies unauthorized Microsoft, Google, PayPal, Apple, and DocuSign login templates hosted on non-whitelisted domains).
+  - Obfuscated dynamic JavaScript execution (`eval`, `unescape`, `String.fromCharCode`) and concealed zero-size/hidden iframe detection.
+
+### 16. Enterprise SOC Incident Case Management Queue
+- Comprehensive incident ticketing and triage workflow mirroring Tier-2/Tier-3 SOC operations:
+  - Automated case creation (`CASE-YYYYMMDD-XXXX`) from email scans with severity calculation and linked IOC artifacts.
+  - Case lifecycle progression (`NEW` ➔ `IN_TRIAGE` ➔ `CONTAINED` ➔ `CLOSED_MALICIOUS` / `CLOSED_FALSE_POSITIVE`).
+  - Real-time investigation timeline, analyst hypothesis logging, and IOC quarantine tracking.
+  - Multi-format case dossier export in formatted Markdown and structured JSON.
 
 ---
 
@@ -280,7 +295,32 @@ phishguard dns-check paypal.com
 phishguard dns-check paypal.com --ip 198.51.100.23
 ```
 
-### 17. Production Container Deployment (Docker & Compose)
+### 17. Dynamic URL Detonation Sandbox
+```bash
+# Detonate suspicious URL, trace redirect hops, and inspect landing DOM
+phishguard sandbox "http://suspicious-login.xyz/auth.php"
+
+# Output structured detonation forensics in JSON format
+phishguard sandbox "http://suspicious-login.xyz/auth.php" --json
+```
+
+### 18. Enterprise SOC Case Management
+```bash
+# Open a new tracked SOC incident case ticket directly from an email
+phishguard case create samples/phishing_account_alert.eml --analyst "tier1-responder"
+
+# List active cases in the investigation queue
+phishguard case list --status IN_TRIAGE
+
+# View detailed case timeline, linked IOCs, or export full Markdown dossier
+phishguard case view CASE-20261125-9A4B
+phishguard case view CASE-20261125-9A4B --dossier
+
+# Update case lifecycle status, reassign analyst, or append investigation note
+phishguard case update CASE-20261125-9A4B --status CONTAINED --note "Firewall IP block verified."
+```
+
+### 19. Production Container Deployment (Docker & Compose)
 ```bash
 # Build and run API & Web Console
 docker-compose up -d phishguard-api
@@ -293,7 +333,7 @@ docker-compose --profile watcher up -d
 
 ## 🧪 Testing Suite
 
-PhishGuard SOC includes a comprehensive automated test suite with 106 unit, integration, and end-to-end tests:
+PhishGuard SOC includes a comprehensive automated test suite with 125 unit, integration, and end-to-end tests:
 
 ```bash
 pytest -v
@@ -302,31 +342,27 @@ pytest -v
 ```text
 ============================= test session starts =============================
 platform win32 -- Python 3.14.4, pytest-9.2.0, pluggy-1.7.0
-tests/test_ai_triage.py::test_offline_intent_credential_harvest PASSED   [  1%]
-tests/test_ai_triage.py::test_offline_intent_financial_bec PASSED        [  2%]
-tests/test_ai_triage.py::test_offline_intent_invoice_fraud PASSED        [  3%]
-tests/test_ai_triage.py::test_offline_intent_payroll_divert PASSED       [  4%]
-tests/test_ai_triage.py::test_offline_intent_tech_support PASSED         [  5%]
-tests/test_ai_triage.py::test_offline_intent_extortion PASSED            [  6%]
-tests/test_ai_triage.py::test_offline_intent_benign_newsletter PASSED    [  7%]
-tests/test_ai_triage.py::test_triage_email_with_parsed_sample PASSED     [  8%]
-tests/test_dns_validator.py::test_evaluate_spf_authorized_ip4 PASSED     [  9%]
-tests/test_dns_validator.py::test_evaluate_spf_unauthorized_ip4 PASSED   [ 10%]
-tests/test_dns_validator.py::test_evaluate_spf_permissive_warning PASSED [ 11%]
-tests/test_dns_validator.py::test_evaluate_spf_missing PASSED            [ 12%]
-tests/test_dns_validator.py::test_evaluate_dmarc_reject_policy PASSED    [ 13%]
-tests/test_dns_validator.py::test_evaluate_dmarc_none_policy_warning PASSED [ 14%]
-tests/test_dns_validator.py::test_evaluate_dmarc_missing PASSED          [ 15%]
-tests/test_dns_validator.py::test_inspect_domain_end_to_end_mock PASSED  [ 16%]
-tests/test_cli_api_session7.py::test_cli_triage_intent_command PASSED    [ 17%]
-tests/test_cli_api_session7.py::test_cli_triage_intent_summary_flag PASSED [ 18%]
-tests/test_cli_api_session7.py::test_cli_dns_check_command PASSED        [ 19%]
-tests/test_cli_api_session7.py::test_api_ai_triage_endpoint PASSED       [ 20%]
-tests/test_cli_api_session7.py::test_api_dns_verify_endpoint PASSED      [ 21%]
-tests/test_alerts.py::test_should_alert_logic PASSED                     [ 22%]
-tests/test_attack_graph_and_campaigns.py::test_campaign_clusterer_grouping PASSED [ 23%]
+tests/test_sandbox_url.py::test_detonate_clean_landing_page PASSED       [  1%]
+tests/test_sandbox_url.py::test_detonate_credential_harvesting_form PASSED [  2%]
+tests/test_sandbox_url.py::test_detonate_external_credential_post PASSED [  3%]
+tests/test_sandbox_url.py::test_detonate_brand_impersonation_microsoft PASSED [  4%]
+tests/test_sandbox_url.py::test_detonate_meta_refresh_redirect PASSED    [  5%]
+tests/test_sandbox_url.py::test_detonate_obfuscated_script_and_hidden_iframe PASSED [  6%]
+tests/test_case_management.py::test_create_case_basic PASSED             [  7%]
+tests/test_case_management.py::test_create_case_from_scan_result PASSED  [  8%]
+tests/test_case_management.py::test_list_cases_and_filter PASSED         [  9%]
+tests/test_case_management.py::test_update_case_status_and_reassignment PASSED [ 10%]
+tests/test_case_management.py::test_add_analyst_note_and_auto_transition PASSED [ 11%]
+tests/test_case_management.py::test_update_ioc_containment_status PASSED [ 12%]
+tests/test_case_management.py::test_export_case_dossier_markdown_and_json PASSED [ 13%]
+tests/test_cli_api_session8.py::test_cli_sandbox_command_json PASSED     [ 14%]
+tests/test_cli_api_session8.py::test_cli_sandbox_command_rich_tables PASSED [ 15%]
+tests/test_cli_api_session8.py::test_cli_case_create_and_list_workflow PASSED [ 16%]
+tests/test_cli_api_session8.py::test_cli_case_view_and_update PASSED     [ 17%]
+tests/test_cli_api_session8.py::test_api_sandbox_detonate_endpoint PASSED [ 18%]
+tests/test_cli_api_session8.py::test_api_cases_crud_lifecycle PASSED     [ 19%]
 ...
-====================== 106 passed, 1 warning in 14.57s =======================
+====================== 125 passed, 1 warning in 15.12s =======================
 ```
 
 ---
@@ -402,14 +438,20 @@ phishguard/
 │       │   └── sample_generator.py # Credential, BEC, Quishing, Macro lures
 │       ├── watcher/                # Continuous abuse mailbox monitor
 │       │   └── imap_watcher.py     # Automated IMAP listener & quarantine daemon
+│       ├── sandbox/                # Dynamic URL Detonation & Headless DOM Analyzer
+│       │   ├── models.py           # UrlDetonationResult, FormTarget, DetonationVerdict
+│       │   └── detonator.py        # Redirect tracker & password harvesting detector
+│       ├── cases/                  # SOC Incident Case Management & Triage Queue
+│       │   ├── models.py           # SocCase, CaseStatus, CaseSeverity, CaseNote, CaseIoc
+│       │   └── manager.py          # SQLite persistence, lifecycle updates & dossier export
 │       ├── server/                 # REST API & Web Dashboard
 │       │   ├── app.py              # FastAPI endpoints & OpenAPI docs
-│       │   └── dashboard.py        # Single-page drag & drop Web UI with SIEM & Graph tabs
+│       │   └── dashboard.py        # Single-page drag & drop Web UI with Sandbox & Case tabs
 │       └── reporters/              # Visualization and report generation
 │           ├── terminal.py         # Color-coded Rich terminal UI
 │           ├── json_reporter.py    # SIEM-compatible JSON exporter
 │           └── html_reporter.py    # Standalone executive HTML report
-├── tests/                          # Automated test suite (106 tests)
+├── tests/                          # Automated test suite (125 tests)
 └── samples/                        # Real-world test email corpus (5 samples)
 ```
 
