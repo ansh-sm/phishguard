@@ -180,6 +180,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <button class="tab-btn" onclick="switchTab('tabHunting')">🔍 Threat Hunting</button>
       <button class="tab-btn" onclick="switchTab('tabCampaigns')">🌐 Threat Campaigns & Graph</button>
       <button class="tab-btn" onclick="switchTab('tabSiem')">📡 SIEM Streaming</button>
+      <button class="tab-btn" onclick="switchTab('tabAiIntent')">🧠 AI Intent & Psychology</button>
+      <button class="tab-btn" onclick="switchTab('tabDnsAudit')">🛡️ DNS Spoofing Audit</button>
     </div>
 
     <!-- Tab 1: Overview -->
@@ -332,6 +334,64 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         <div id="siemLog" style="background: var(--bg-base); padding: 12px; border-radius: 6px; font-family: monospace; font-size: 12px; color: var(--text-secondary); min-height: 50px;">Awaiting forwarding or diagnostic test...</div>
       </div>
     </div>
+
+    <!-- Tab 10: AI Intent & Psychology -->
+    <div id="tabAiIntent" class="tab-content">
+      <div class="card" style="border-left: 4px solid #818cf8;">
+        <h4 style="color: #818cf8; margin-bottom: 12px;">AI Intent & Social Engineering Cognitive Triage</h4>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+          <div style="background: var(--bg-surface-elevated); padding: 16px; border-radius: 8px;">
+            <div style="font-size: 11px; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 4px;">Primary Adversary Objective</div>
+            <div id="aiPrimaryIntent" style="font-size: 20px; font-weight: 800; color: var(--danger);">-</div>
+            <div id="aiSecondaryIntents" style="font-size: 12px; color: var(--warning); margin-top: 4px;">-</div>
+          </div>
+          <div style="background: var(--bg-surface-elevated); padding: 16px; border-radius: 8px;">
+            <div style="font-size: 11px; text-transform: uppercase; color: var(--text-secondary); margin-bottom: 4px;">Cognitive Urgency Index</div>
+            <div id="aiUrgencyVal" style="font-size: 20px; font-weight: 800; color: var(--warning);">-</div>
+            <div id="aiVipAlert" style="font-size: 12px; color: var(--danger); font-weight: 700; margin-top: 4px;"></div>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 16px;">
+          <h5 style="color: var(--accent); font-size: 13px; margin-bottom: 6px;">Psychological Manipulation Tactics Exploited</h5>
+          <div id="aiTacticsList" style="display: flex; gap: 8px; flex-wrap: wrap;">-</div>
+        </div>
+
+        <div style="margin-bottom: 16px;">
+          <h5 style="color: var(--accent); font-size: 13px; margin-bottom: 6px;">Suspicious Trigger Phrases Identified</h5>
+          <ul id="aiPhrasesList" style="padding-left: 20px; color: #fca5a5; font-size: 13px;"></ul>
+        </div>
+
+        <div style="background: var(--bg-base); padding: 14px; border-radius: 6px; margin-bottom: 16px;">
+          <h5 style="color: var(--text-secondary); font-size: 12px; text-transform: uppercase; margin-bottom: 6px;">SOC Executive Cognitive Assessment</h5>
+          <p id="aiExecutiveSummary" style="font-size: 13px; line-height: 1.6; color: var(--text-primary);">-</p>
+        </div>
+
+        <!-- Ad-hoc text triager -->
+        <div style="border-top: 1px solid var(--border-color); padding-top: 16px;">
+          <h5 style="color: var(--text-secondary); font-size: 12px; text-transform: uppercase; margin-bottom: 8px;">Ad-Hoc Message Text Triager</h5>
+          <textarea id="adhocText" rows="3" placeholder="Paste suspicious email text, SMS prompt, or user-reported message here to evaluate..." style="width: 100%; padding: 10px; background: var(--bg-base); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 6px; font-size: 12px; margin-bottom: 8px;"></textarea>
+          <button class="btn" onclick="executeAdhocTriage()" style="background: #818cf8; color: #0b0f19; font-weight: 700;">Triage Pasted Text</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 11: DNS Spoofing Audit -->
+    <div id="tabDnsAudit" class="tab-content">
+      <div class="card" style="border-left: 4px solid var(--success);">
+        <h4 style="color: var(--success); margin-bottom: 12px;">Live Authoritative DNS & Email Authentication Audit</h4>
+        <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+          <input id="dnsDomainInput" type="text" placeholder="Sender Domain (e.g. paypal.com, paypa1-update.com)" style="flex: 2; padding: 10px; background: var(--bg-base); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 6px;">
+          <input id="dnsIpInput" type="text" placeholder="Originating IP (Optional, e.g. 185.220.101.5)" style="flex: 1; padding: 10px; background: var(--bg-base); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 6px;">
+          <button class="btn" onclick="executeDnsAudit()" style="background: var(--success); color: #0b0f19; font-weight: 700;">Run DNS Audit</button>
+        </div>
+        <table>
+          <thead><tr><th>Mechanism</th><th>Verification Verdict</th><th>Authoritative Record / Matched Rule</th></tr></thead>
+          <tbody id="dnsAuditBody"><tr><td colspan="3" style="color: var(--text-secondary);">Enter a domain or scan an email to audit live DNS authentication records.</td></tr></tbody>
+        </table>
+        <div id="dnsRiskSummary" style="margin-top: 14px; font-size: 13px;"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -462,9 +522,11 @@ function renderResults(res) {
   const playbookList = document.getElementById('playbookList');
   playbookList.innerHTML = res.remediation_steps.map(s => `<li>${s}</li>`).join('');
 
-  // Load SOAR Remediation & Attack Graph
+  // Load SOAR Remediation, Attack Graph & AI Triage
   loadRemediation(res.scan_id);
   loadIncidentGraph(res.scan_id);
+  loadAiTriage(res);
+  prefillDns(res);
 }
 
 function switchTab(tabId) {
@@ -681,6 +743,143 @@ async function forwardSiem() {
     }
   } catch (err) {
     log.innerHTML = `<span style="color: var(--danger);">Error: ${err.message}</span>`;
+  }
+}
+
+async function loadAiTriage(res) {
+  try {
+    const resp = await fetch('/api/ai/triage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subject: res.metadata.subject,
+        body_text: res.written_explanation + "\n" + (res.key_findings || []).join("\n"),
+        from_name: res.metadata.from_name,
+        from_email: res.metadata.from_email || res.metadata.from_raw,
+        provider: 'offline'
+      })
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      renderAiTriageData(data);
+    }
+  } catch (e) {}
+}
+
+function renderAiTriageData(data) {
+  document.getElementById('aiPrimaryIntent').innerText = data.primary_intent;
+  document.getElementById('aiSecondaryIntents').innerText = data.secondary_intents.length > 0 ? 'Secondary: ' + data.secondary_intents.join(', ') : 'No secondary vectors';
+  document.getElementById('aiUrgencyVal').innerText = (data.urgency_score * 100).toFixed(0) + '% (Score ' + data.urgency_score + '/1.0)';
+  
+  const vipEl = document.getElementById('aiVipAlert');
+  if (data.vip_impersonation_score > 0.3) {
+    vipEl.innerText = '⚠️ ELEVATED VIP / EXECUTIVE IMPERSONATION RISK (' + (data.vip_impersonation_score * 100).toFixed(0) + '%)';
+  } else {
+    vipEl.innerText = '';
+  }
+
+  const tacticsEl = document.getElementById('aiTacticsList');
+  if (data.psychological_tactics.length > 0) {
+    tacticsEl.innerHTML = data.psychological_tactics.map(t => `<span class="pill danger">${t.replace(/_/g, ' ')}</span>`).join(' ');
+  } else {
+    tacticsEl.innerHTML = '<span class="pill success">No Coercive Tactics</span>';
+  }
+
+  const phrasesEl = document.getElementById('aiPhrasesList');
+  if (data.suspicious_phrases.length > 0) {
+    phrasesEl.innerHTML = data.suspicious_phrases.map(p => `<li><strong>${p}</strong></li>`).join('');
+  } else {
+    phrasesEl.innerHTML = '<li>No suspicious coercion phrases detected.</li>';
+  }
+
+  document.getElementById('aiExecutiveSummary').innerText = data.executive_summary;
+}
+
+async function executeAdhocTriage() {
+  const text = document.getElementById('adhocText').value.trim();
+  if (!text) { alert('Please enter message text to triage.'); return; }
+  try {
+    const resp = await fetch('/api/ai/triage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        subject: 'Ad-hoc user report',
+        body_text: text,
+        provider: 'offline'
+      })
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      renderAiTriageData(data);
+      alert('Cognitive triage updated for pasted message text!');
+    }
+  } catch (err) {
+    alert('Error triaging message: ' + err.message);
+  }
+}
+
+function prefillDns(res) {
+  const domain = res.metadata.from_domain || (res.metadata.from_email ? res.metadata.from_email.split('@')[1] : '');
+  const ip = res.headers.originating_ip || '';
+  if (domain) {
+    document.getElementById('dnsDomainInput').value = domain;
+    document.getElementById('dnsIpInput').value = ip;
+    executeDnsAudit();
+  }
+}
+
+async function executeDnsAudit() {
+  const domain = document.getElementById('dnsDomainInput').value.trim();
+  const ip = document.getElementById('dnsIpInput').value.trim();
+  const body = document.getElementById('dnsAuditBody');
+  const summary = document.getElementById('dnsRiskSummary');
+  if (!domain) { alert('Please provide a domain to audit.'); return; }
+
+  body.innerHTML = '<tr><td colspan="3">Querying authoritative DNS servers...</td></tr>';
+  summary.innerHTML = '';
+
+  try {
+    const url = `/api/dns/verify/${encodeURIComponent(domain)}` + (ip ? `?ip=${encodeURIComponent(ip)}` : '');
+    const resp = await fetch(url);
+    const data = await resp.json();
+
+    const spfStatus = data.spf.has_spf 
+      ? (data.spf.ip_authorized ? '<span class="pill success">AUTHORIZED</span>' : (ip ? '<span class="pill danger">UNAUTHORIZED</span>' : '<span class="pill warning">PUBLISHED</span>'))
+      : '<span class="pill danger">MISSING</span>';
+    
+    const dmarcStatus = data.dmarc.has_dmarc
+      ? `<span class="pill ${data.dmarc.policy === 'none' ? 'warning' : 'success'}">${data.dmarc.policy.toUpperCase()}</span>`
+      : '<span class="pill danger">MISSING</span>';
+
+    const mxStatus = data.mx_records.length > 0
+      ? '<span class="pill success">RESOLVED</span>'
+      : '<span class="pill warning">NONE</span>';
+
+    body.innerHTML = `
+      <tr>
+        <td><strong>SPF (v=spf1)</strong></td>
+        <td>${spfStatus}</td>
+        <td class="code">${data.spf.raw_record || 'No SPF record found.'}</td>
+      </tr>
+      <tr>
+        <td><strong>DMARC (_dmarc)</strong></td>
+        <td>${dmarcStatus}</td>
+        <td class="code">${data.dmarc.raw_record || 'No DMARC record found.'}</td>
+      </tr>
+      <tr>
+        <td><strong>MX Mail Exchangers</strong></td>
+        <td>${mxStatus}</td>
+        <td class="code">${data.mx_records.join(', ') || 'No inbound MX records found.'}</td>
+      </tr>
+    `;
+
+    const riskColor = data.risk_score >= 60 ? 'var(--danger)' : (data.risk_score >= 25 ? 'var(--warning)' : 'var(--success)');
+    summary.innerHTML = `
+      <div style="font-weight: bold; color: ${riskColor}; margin-bottom: 6px;">DNS Spoofing Resilience Score: ${data.risk_score}/100</div>
+      ${(data.risk_reasons || []).map(r => `<div style="color: #fca5a5;">• ${r}</div>`).join('')}
+    `;
+  } catch (err) {
+    body.innerHTML = `<tr><td colspan="3" style="color: var(--danger);">DNS audit error: ${err.message}</td></tr>`;
   }
 }
 </script>
