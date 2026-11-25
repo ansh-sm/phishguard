@@ -45,6 +45,14 @@ class ParsedEmail:
     attachments: list[RawAttachment] = field(default_factory=list)
     nested_messages: list["ParsedEmail"] = field(default_factory=list)
 
+    @property
+    def body_text(self) -> str:
+        return self.plain_body
+
+    @property
+    def body_html(self) -> str:
+        return self.html_body
+
 
 class EmlParser:
     """
