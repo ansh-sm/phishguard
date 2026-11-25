@@ -10,6 +10,8 @@ from pydantic import BaseModel
 
 from phishguard import __version__
 from phishguard.cli import _run_analysis
+from phishguard.ai import AiTriageEngine, AiTriageRequest, AiTriageResult
+from phishguard.forensics.dns_validator import DnsPolicyValidator, DomainDnsInspection
 from phishguard.forensics.iocs import IOCExporter, IOCExtractor
 from phishguard.intel.cache import IntelCache
 from phishguard.models.report import ScanResult
@@ -222,3 +224,22 @@ async def forward_to_siem(req: SiemForwardRequest):
 async def test_siem_connection(config: SiemConfig):
     """Test connectivity and authentication to destination SIEM."""
     return SiemForwarder.test_connection(config)
+
+
+@app.post("/api/ai/triage", response_model=AiTriageResult)
+async def triage_email_content(req: AiTriageRequest):
+    """Run AI social engineering and intent classification on email text."""
+    return AiTriageEngine.triage_text(
+        subject=req.subject,
+        body=req.body_text,
+        from_name=req.from_name,
+        from_email=req.from_email,
+        provider=req.provider,
+        api_key=req.api_key,
+    )
+
+
+@app.get("/api/dns/verify/{domain}", response_model=DomainDnsInspection)
+async def verify_domain_dns(domain: str, ip: Optional[str] = Query(None, description="Originating IP to test")):
+    """Perform live DNS queries to audit SPF and DMARC spoofing resilience."""
+    return DnsPolicyValidator.inspect_domain(domain, originating_ip=ip)

@@ -14,12 +14,14 @@ from rich.table import Table
 import typer
 
 from phishguard import __version__
+from phishguard.ai import AiTriageEngine, AiTriageResult, EmailIntentEnum
 from phishguard.alerts import AlertConfig, AlertDispatcher, AlertWebhookType
 from phishguard.engine.mitre import MitreAttackMapper
 from phishguard.engine.narrative import NarrativeGenerator
 from phishguard.engine.scorer import ScoringEngine
 from phishguard.forensics.attachments import AttachmentForensicsEngine
 from phishguard.forensics.auth import AuthResultsParser
+from phishguard.forensics.dns_validator import DnsPolicyValidator, DomainDnsInspection
 from phishguard.forensics.headers import HeaderForensicsEngine
 from phishguard.forensics.iocs import IOCExporter, IOCExtractor
 from phishguard.forensics.quishing import QuishingDetector
@@ -831,6 +833,102 @@ def generate_graph(
         console.print(f"[bold green]✓ Wrote {format_type.upper()} graph to [yellow]{output}[/yellow][/bold green]")
     else:
         console.print(content)
+
+
+@app.command(name="triage-intent")
+def triage_intent(
+    file_path: Path = typer.Argument(..., help="Path to .eml file to analyze for phishing intent"),
+    provider: str = typer.Option("offline", "--provider", "-p", help="Provider: offline or gemini"),
+    summary_only: bool = typer.Option(False, "--summary", "-s", help="Output only the executive summary"),
+):
+    """Analyze email content for adversary intent, psychological manipulation, and urgency."""
+    if not file_path.exists():
+        console.print(f"[bold red]Error:[/bold red] File not found: {file_path}")
+        raise typer.Exit(code=1)
+
+    parser = EmlParser()
+    parsed = parser.parse_file(file_path)
+    res = AiTriageEngine.triage_email(parsed, provider=provider)
+
+    if summary_only:
+        console.print(f"\n[bold cyan]Executive Summary:[/bold cyan] {res.executive_summary}\n")
+        return
+
+    console.print(f"\n[bold cyan]🧠 AI Phishing Intent & Cognitive Triage Report[/bold cyan]")
+    console.print(f"File: [yellow]{file_path.name}[/yellow] | Engine: [dim]{res.provider_used}[/dim]\n")
+
+    intent_color = "red" if "BENIGN" not in res.primary_intent.value else "green"
+    console.print(f"• [bold]Primary Intent:[/bold] [{intent_color}]{res.primary_intent.value}[/{intent_color}]")
+    if res.secondary_intents:
+        sec_str = ", ".join(s.value for s in res.secondary_intents)
+        console.print(f"• [bold]Secondary Vectors:[/bold] [yellow]{sec_str}[/yellow]")
+
+    urgency_bar = "█" * int(res.urgency_score * 10) + "░" * (10 - int(res.urgency_score * 10))
+    console.print(f"• [bold]Urgency Index:[/bold] [yellow]{urgency_bar}[/yellow] ({res.urgency_score:.2f}/1.0)")
+
+    if res.vip_impersonation_score > 0.0:
+        console.print(f"• [bold red]VIP Impersonation Risk:[/bold red] {res.vip_impersonation_score:.2f}/1.0")
+
+    if res.psychological_tactics:
+        tactics_str = ", ".join(t.value for t in res.psychological_tactics)
+        console.print(f"• [bold]Psychological Tactics:[/bold] [magenta]{tactics_str}[/magenta]")
+
+    if res.suspicious_phrases:
+        console.print(f"• [bold]Trigger Phrases:[/bold] [dim]{', '.join(res.suspicious_phrases)}[/dim]")
+
+    if res.call_to_action:
+        console.print(f"• [bold]Call-to-Action:[/bold] [bold red]{res.call_to_action}[/bold red]")
+
+    console.print(f"\n[bold cyan]SOC Executive Assessment:[/bold cyan]")
+    console.print(f"{res.executive_summary}\n")
+
+
+@app.command(name="dns-check")
+def dns_check(
+    domain: str = typer.Argument(..., help="Domain name to verify (e.g. paypal.com, paypa1-update.com)"),
+    ip: Optional[str] = typer.Option(None, "--ip", help="Originating IP address to test against SPF record"),
+):
+    """Perform live DNS query and audit domain SPF/DMARC spoofing resilience."""
+    console.print(f"[bold cyan]PhishGuard SOC[/bold cyan] Auditing DNS authentication for [yellow]{domain}[/yellow]...\n")
+    audit = DnsPolicyValidator.inspect_domain(domain, originating_ip=ip)
+
+    table = Table(title=f"DNS Authentication Audit: {audit.domain}", show_header=True, header_style="bold cyan")
+    table.add_column("Protocol", style="bold")
+    table.add_column("Status", justify="center")
+    table.add_column("Details", max_width=60)
+
+    # SPF Row
+    if audit.spf.has_spf:
+        spf_status = "[green]AUTHORIZED[/green]" if audit.spf.ip_authorized else ("[red]UNAUTHORIZED[/red]" if ip else "[yellow]PUBLISHED[/yellow]")
+        spf_det = audit.spf.raw_record or "-"
+        if ip and audit.spf.mechanism_matched:
+            spf_det += f" (Matched: {audit.spf.mechanism_matched})"
+        table.add_row("SPF (v=spf1)", spf_status, spf_det)
+    else:
+        table.add_row("SPF (v=spf1)", "[red]MISSING[/red]", "No SPF TXT record published on domain")
+
+    # DMARC Row
+    if audit.dmarc.has_dmarc:
+        dmarc_color = "red" if audit.dmarc.policy == "none" else "green"
+        table.add_row("DMARC (v=DMARC1)", f"[{dmarc_color}]{audit.dmarc.policy.upper()}[/{dmarc_color}]", audit.dmarc.raw_record or "-")
+    else:
+        table.add_row("DMARC (v=DMARC1)", "[red]MISSING[/red]", f"No DMARC record at _dmarc.{domain}")
+
+    # MX Row
+    if audit.mx_records:
+        table.add_row("MX Records", "[green]FOUND[/green]", ", ".join(audit.mx_records))
+    else:
+        table.add_row("MX Records", "[yellow]NONE[/yellow]", "No inbound mail exchangers published")
+
+    console.print(table)
+
+    risk_color = "red" if audit.risk_score >= 60 else ("yellow" if audit.risk_score >= 25 else "green")
+    console.print(f"\n[bold]DNS Security Risk Score:[/bold] [{risk_color}]{audit.risk_score:.0f}/100[/{risk_color}]")
+    if audit.risk_reasons:
+        console.print("[bold red]Vulnerabilities Identified:[/bold red]")
+        for reason in audit.risk_reasons:
+            console.print(f"  • {reason}")
+    console.print()
 
 
 @app.command(name="version")
