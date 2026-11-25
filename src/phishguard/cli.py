@@ -16,6 +16,7 @@ import typer
 from phishguard import __version__
 from phishguard.ai import AiTriageEngine, AiTriageResult, EmailIntentEnum
 from phishguard.alerts import AlertConfig, AlertDispatcher, AlertWebhookType
+from phishguard.cases import CaseManager, CaseSeverity, CaseStatus, SocCase
 from phishguard.engine.mitre import MitreAttackMapper
 from phishguard.engine.narrative import NarrativeGenerator
 from phishguard.engine.scorer import ScoringEngine
@@ -36,6 +37,7 @@ from phishguard.reporters.html_reporter import HtmlReporter
 from phishguard.reporters.json_reporter import JsonReporter
 from phishguard.reporters.terminal import TerminalReporter
 from phishguard.rules.engine import RuleEngine
+from phishguard.sandbox import UrlDetonator, UrlDetonationResult, DetonationVerdict
 from phishguard.hunting import AttackGraphBuilder, CampaignClusterer, ThreatCampaign, AttackGraph
 from phishguard.siem import SiemConfig, SiemForwarder, SiemTargetType, SiemForwardResult
 from phishguard.soar.generator import RemediationEngine
@@ -929,6 +931,233 @@ def dns_check(
         for reason in audit.risk_reasons:
             console.print(f"  • {reason}")
     console.print()
+
+
+@app.command(name="sandbox")
+def sandbox_url(
+    url: str = typer.Argument(..., help="Suspicious URL to detonate inside sandbox"),
+    timeout: float = typer.Option(8.0, "--timeout", help="HTTP connection timeout in seconds"),
+    user_agent: Optional[str] = typer.Option(None, "--user-agent", help="Custom browser User-Agent"),
+    json_output: bool = typer.Option(False, "--json", help="Output detonation result in JSON"),
+):
+    """Detonate an untrusted URL in the sandbox, trace redirects, and analyze landing DOM."""
+    console.print(f"[bold cyan]PhishGuard SOC[/bold cyan] Detonating target URL in sandbox: [yellow]{url}[/yellow]...\n")
+    kwargs = {"timeout_seconds": timeout}
+    if user_agent:
+        kwargs["user_agent"] = user_agent
+    detonator = UrlDetonator(**kwargs)
+    result = detonator.detonate(url)
+
+    if json_output:
+        console.print_json(result.model_dump_json(indent=2))
+        return
+
+    verdict_color = "red" if result.verdict == DetonationVerdict.MALICIOUS else ("yellow" if result.verdict == DetonationVerdict.SUSPICIOUS else "green")
+    console.print(f"[bold]Target URL:[/bold] {result.target_url}")
+    console.print(f"[bold]Final URL:[/bold]  {result.final_url}")
+    console.print(f"[bold]Status Code:[/bold] {result.status_code}")
+    console.print(f"[bold]Verdict:[/bold]     [{verdict_color}]{result.verdict.value}[/{verdict_color}]")
+    console.print(f"[bold]Risk Score:[/bold]  [{verdict_color}]{result.risk_score:.0f}/100[/{verdict_color}]")
+    if result.page_title:
+        console.print(f"[bold]Page Title:[/bold]  {result.page_title}")
+    if result.server_banner:
+        console.print(f"[bold]Server Banner:[/bold] {result.server_banner}")
+
+    if result.redirect_chain:
+        table = Table(title="HTTP & Client-Side Redirect Chain", show_header=True, header_style="bold cyan")
+        table.add_column("Hop #", justify="center", style="bold")
+        table.add_column("Status", justify="center")
+        table.add_column("Destination URL", max_width=60)
+        table.add_column("Latency (ms)", justify="right")
+
+        for hop in result.redirect_chain:
+            table.add_row(
+                str(hop.hop_number),
+                str(hop.status_code),
+                hop.url,
+                f"{hop.elapsed_ms:.1f}",
+            )
+        console.print()
+        console.print(table)
+
+    if result.forms_detected:
+        f_table = Table(title="Discovered HTML Interactive Forms", show_header=True, header_style="bold magenta")
+        f_table.add_column("Action Target", max_width=45)
+        f_table.add_column("Method", justify="center")
+        f_table.add_column("Password Field?", justify="center")
+        f_table.add_column("External POST?", justify="center")
+
+        for form in result.forms_detected:
+            f_table.add_row(
+                form.action,
+                form.method,
+                "[bold red]YES[/bold red]" if form.has_password_field else "NO",
+                "[bold red]YES[/bold red]" if form.is_external_post else "NO",
+            )
+        console.print()
+        console.print(f_table)
+
+    if result.brand_impersonation.detected:
+        console.print(f"\n[bold red]⚠️ BRAND IMPERSONATION ALERT:[/bold red] Impersonating [bold yellow]{result.brand_impersonation.impersonated_brand}[/bold yellow] (Confidence: {result.brand_impersonation.confidence * 100:.0f}%)")
+        for ind in result.brand_impersonation.matched_indicators:
+            console.print(f"  • Matched: {ind}")
+
+    if result.suspicious_indicators:
+        console.print("\n[bold red]Forensic Indicators Discovered:[/bold red]")
+        for ind in result.suspicious_indicators:
+            console.print(f"  • {ind}")
+    console.print()
+
+
+case_app = typer.Typer(help="Enterprise SOC Incident Case Management and triage queues.")
+app.add_typer(case_app, name="case")
+
+
+@case_app.command(name="create")
+def case_create(
+    eml_path: Path = typer.Argument(..., help="Path to suspicious .eml file"),
+    analyst: str = typer.Option("tier1-analyst", "--analyst", help="Assigned SOC analyst"),
+):
+    """Scan an email and automatically create a tracked SOC investigation case ticket."""
+    if not eml_path.exists():
+        console.print(f"[bold red]Error:[/bold red] File not found at: {eml_path}")
+        raise typer.Exit(code=1)
+
+    parser = EmlParser()
+    parsed = parser.parse_file(eml_path)
+    scan_result = asyncio.run(_run_analysis(parsed, offline=True))
+
+    mgr = CaseManager()
+    case = mgr.create_case_from_scan(scan_result, assigned_analyst=analyst)
+
+    sev_color = "red" if case.severity == CaseSeverity.CRITICAL else ("yellow" if case.severity in (CaseSeverity.HIGH, CaseSeverity.MEDIUM) else "green")
+    console.print(f"\n[bold green]✓ SOC Incident Case Ticket Opened Successfully![/bold green]")
+    console.print(f"• [bold]Case ID:[/bold]          [bold cyan]{case.case_id}[/bold cyan]")
+    console.print(f"• [bold]Title:[/bold]            {case.title}")
+    console.print(f"• [bold]Severity:[/bold]         [{sev_color}]{case.severity.value}[/{sev_color}]")
+    console.print(f"• [bold]Assigned Analyst:[/bold] {case.assigned_analyst}")
+    console.print(f"• [bold]Sender:[/bold]           {case.sender}")
+    console.print(f"• [bold]Risk Score:[/bold]       [{sev_color}]{case.score:.1f}/100[/{sev_color}]")
+    console.print(f"• [bold]Linked IOCs:[/bold]      {len(case.iocs)} artifacts tracked\n")
+
+
+@case_app.command(name="list")
+def case_list(
+    status: Optional[str] = typer.Option(None, "--status", help="Filter by status (NEW, IN_TRIAGE, CONTAINED, CLOSED_MALICIOUS, CLOSED_FALSE_POSITIVE)"),
+    severity: Optional[str] = typer.Option(None, "--severity", help="Filter by severity (LOW, MEDIUM, HIGH, CRITICAL)"),
+    analyst: Optional[str] = typer.Option(None, "--analyst", help="Filter by assigned analyst"),
+    limit: int = typer.Option(20, "--limit", help="Max cases to display"),
+):
+    """List active SOC incident cases in the triage queue."""
+    mgr = CaseManager()
+    cases = mgr.list_cases(status=status, severity=severity, analyst=analyst, limit=limit)
+
+    if not cases:
+        console.print("[yellow]No SOC cases found matching filter criteria.[/yellow]")
+        return
+
+    table = Table(title=f"SOC Incident Case Queue ({len(cases)} items)", show_header=True, header_style="bold cyan")
+    table.add_column("Case ID", style="bold cyan")
+    table.add_column("Severity", justify="center")
+    table.add_column("Status", justify="center")
+    table.add_column("Score", justify="right")
+    table.add_column("Sender", max_width=25)
+    table.add_column("Subject", max_width=30)
+    table.add_column("Analyst", style="dim")
+    table.add_column("Created", style="dim")
+
+    for c in cases:
+        sev_color = "red" if c.severity == CaseSeverity.CRITICAL else ("yellow" if c.severity in (CaseSeverity.HIGH, CaseSeverity.MEDIUM) else "green")
+        stat_color = "green" if c.status == CaseStatus.CONTAINED else ("blue" if c.status == CaseStatus.IN_TRIAGE else ("red" if c.status == CaseStatus.NEW else "dim"))
+        table.add_row(
+            c.case_id,
+            f"[{sev_color}]{c.severity.value}[/{sev_color}]",
+            f"[{stat_color}]{c.status.value}[/{stat_color}]",
+            f"{c.score:.0f}",
+            c.sender,
+            c.subject,
+            c.assigned_analyst,
+            c.created_at[:10],
+        )
+
+    console.print()
+    console.print(table)
+    console.print()
+
+
+@case_app.command(name="view")
+def case_view(
+    case_id: str = typer.Argument(..., help="Case ID (e.g. CASE-20261125-9A4B)"),
+    dossier: bool = typer.Option(False, "--dossier", help="Output full Markdown incident dossier"),
+):
+    """View detailed case information, investigation timeline, and IOC checklist."""
+    mgr = CaseManager()
+    case = mgr.get_case(case_id)
+    if not case:
+        console.print(f"[bold red]Error:[/bold red] Case '{case_id}' not found.")
+        raise typer.Exit(code=1)
+
+    if dossier:
+        console.print(mgr.export_case_dossier(case_id, format="markdown"))
+        return
+
+    sev_color = "red" if case.severity == CaseSeverity.CRITICAL else ("yellow" if case.severity in (CaseSeverity.HIGH, CaseSeverity.MEDIUM) else "green")
+    console.print(f"\n[bold cyan]SOC Case Dossier:[/bold cyan] [bold]{case.case_id}[/bold] ({case.title})")
+    console.print(f"• [bold]Status:[/bold]           {case.status.value}")
+    console.print(f"• [bold]Severity:[/bold]         [{sev_color}]{case.severity.value}[/{sev_color}]")
+    console.print(f"• [bold]Assigned Analyst:[/bold] {case.assigned_analyst}")
+    console.print(f"• [bold]Risk Score:[/bold]       [{sev_color}]{case.score:.1f}/100[/{sev_color}]")
+    console.print(f"• [bold]Summary:[/bold]          {case.summary}")
+
+    if case.iocs:
+        ioc_table = Table(title="Associated Indicators of Compromise (IOCs)", show_header=True, header_style="bold magenta")
+        ioc_table.add_column("Type", style="bold")
+        ioc_table.add_column("Indicator Value", max_width=50)
+        ioc_table.add_column("Containment Status", justify="center")
+
+        for ioc in case.iocs:
+            status_color = "green" if ioc.status in ("BLOCKED", "QUARANTINED") else "yellow"
+            ioc_table.add_row(ioc.ioc_type, ioc.value, f"[{status_color}]{ioc.status}[/{status_color}]")
+
+        console.print()
+        console.print(ioc_table)
+
+    if case.timeline:
+        t_table = Table(title="Investigation Timeline & Audit Trail", show_header=True, header_style="bold blue")
+        t_table.add_column("Timestamp", style="dim")
+        t_table.add_column("Analyst", style="bold")
+        t_table.add_column("Log Note / Action Taken", max_width=60)
+
+        for note in case.timeline:
+            t_table.add_row(note.timestamp, note.analyst, note.message)
+
+        console.print()
+        console.print(t_table)
+    console.print()
+
+
+@case_app.command(name="update")
+def case_update(
+    case_id: str = typer.Argument(..., help="Case ID to update"),
+    status: Optional[str] = typer.Option(None, "--status", help="New status (NEW, IN_TRIAGE, CONTAINED, CLOSED_MALICIOUS, CLOSED_FALSE_POSITIVE)"),
+    severity: Optional[str] = typer.Option(None, "--severity", help="New severity (LOW, MEDIUM, HIGH, CRITICAL)"),
+    analyst: Optional[str] = typer.Option(None, "--analyst", help="Reassign analyst"),
+    note: Optional[str] = typer.Option(None, "--note", help="Analyst note or investigation update to add"),
+):
+    """Update case lifecycle state, severity rating, assignment, or add a note."""
+    mgr = CaseManager()
+    case = mgr.update_case(case_id, status=status, severity=severity, assigned_analyst=analyst)
+    if not case:
+        console.print(f"[bold red]Error:[/bold red] Case '{case_id}' not found.")
+        raise typer.Exit(code=1)
+
+    if note:
+        case = mgr.add_note(case_id, analyst or case.assigned_analyst, note)
+
+    console.print(f"[bold green]✓ Case '{case_id}' successfully updated.[/bold green]")
+    console.print(f"• Current Status: {case.status.value}")
+    console.print(f"• Current Severity: {case.severity.value}")
+    console.print(f"• Assigned Analyst: {case.assigned_analyst}\n")
 
 
 @app.command(name="version")

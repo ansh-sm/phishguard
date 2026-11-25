@@ -17,6 +17,8 @@ from phishguard.intel.cache import IntelCache
 from phishguard.models.report import ScanResult
 from phishguard.parser.eml_parser import EmlParser
 from phishguard.reporters.html_reporter import HtmlReporter
+from phishguard.sandbox import UrlDetonator, UrlDetonationResult
+from phishguard.cases import CaseManager, CaseSeverity, CaseStatus, SocCase
 from phishguard.server.dashboard import DASHBOARD_HTML
 from phishguard.hunting import AttackGraphBuilder, CampaignClusterer, ThreatCampaign, AttackGraph
 from phishguard.siem import SiemConfig, SiemForwarder, SiemForwardResult
@@ -243,3 +245,117 @@ async def triage_email_content(req: AiTriageRequest):
 async def verify_domain_dns(domain: str, ip: Optional[str] = Query(None, description="Originating IP to test")):
     """Perform live DNS queries to audit SPF and DMARC spoofing resilience."""
     return DnsPolicyValidator.inspect_domain(domain, originating_ip=ip)
+
+
+class DetonateRequest(BaseModel):
+    url: str
+    timeout: float = 8.0
+    user_agent: Optional[str] = None
+
+
+@app.post("/api/sandbox/detonate", response_model=UrlDetonationResult)
+async def detonate_url(req: DetonateRequest):
+    """Detonate suspicious URL in sandbox and inspect redirect chain and landing DOM."""
+    kwargs = {"timeout_seconds": req.timeout}
+    if req.user_agent:
+        kwargs["user_agent"] = req.user_agent
+    detonator = UrlDetonator(**kwargs)
+    return detonator.detonate(req.url)
+
+
+class CreateCaseRequest(BaseModel):
+    title: str
+    severity: str = "MEDIUM"
+    sender: str = ""
+    subject: str = ""
+    score: float = 0.0
+    summary: str = ""
+    assigned_analyst: str = "tier1-analyst"
+    source_scan_id: Optional[str] = None
+
+
+class CaseUpdateRequest(BaseModel):
+    status: Optional[str] = None
+    severity: Optional[str] = None
+    assigned_analyst: Optional[str] = None
+    note: Optional[str] = None
+    note_analyst: Optional[str] = "analyst"
+
+
+@app.post("/api/cases", response_model=SocCase)
+async def create_case(req: CreateCaseRequest):
+    """Create a new tracked SOC incident case."""
+    mgr = CaseManager()
+    sev = CaseSeverity(req.severity.upper()) if req.severity else CaseSeverity.MEDIUM
+    return mgr.create_case(
+        title=req.title,
+        severity=sev,
+        sender=req.sender,
+        subject=req.subject,
+        score=req.score,
+        summary=req.summary,
+        assigned_analyst=req.assigned_analyst,
+        source_scan_id=req.source_scan_id,
+    )
+
+
+@app.post("/api/cases/from-scan/{scan_id}", response_model=SocCase)
+async def create_case_from_scan_id(scan_id: str, analyst: str = Query("tier1-analyst")):
+    """Create a SOC case directly from an analyzed scan result."""
+    db = IncidentDatabase()
+    result = SCAN_CACHE.get(scan_id) or db.get_scan(scan_id)
+    if not result:
+        raise HTTPException(status_code=404, detail=f"Scan '{scan_id}' not found")
+    mgr = CaseManager()
+    return mgr.create_case_from_scan(result, assigned_analyst=analyst)
+
+
+@app.get("/api/cases", response_model=list[SocCase])
+async def list_cases(
+    status: Optional[str] = Query(None),
+    severity: Optional[str] = Query(None),
+    analyst: Optional[str] = Query(None),
+    limit: int = Query(50),
+):
+    """List cases in the SOC investigation queue."""
+    mgr = CaseManager()
+    return mgr.list_cases(status=status, severity=severity, analyst=analyst, limit=limit)
+
+
+@app.get("/api/cases/{case_id}", response_model=SocCase)
+async def get_case(case_id: str):
+    """Fetch single case details including timeline and linked IOCs."""
+    mgr = CaseManager()
+    case = mgr.get_case(case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail=f"Case '{case_id}' not found")
+    return case
+
+
+@app.patch("/api/cases/{case_id}", response_model=SocCase)
+async def update_case(case_id: str, req: CaseUpdateRequest):
+    """Update case state, assignment, or append an analyst note."""
+    mgr = CaseManager()
+    case = mgr.update_case(
+        case_id,
+        status=req.status,
+        severity=req.severity,
+        assigned_analyst=req.assigned_analyst,
+    )
+    if not case:
+        raise HTTPException(status_code=404, detail=f"Case '{case_id}' not found")
+    if req.note:
+        case = mgr.add_note(case_id, req.note_analyst or "analyst", req.note)
+    return case
+
+
+@app.get("/api/cases/{case_id}/dossier")
+async def get_case_dossier(case_id: str, format: str = Query("markdown")):
+    """Export case briefing dossier in markdown or json format."""
+    mgr = CaseManager()
+    try:
+        dossier = mgr.export_case_dossier(case_id, format=format)
+        media_type = "application/json" if format.lower() == "json" else "text/markdown"
+        return Response(content=dossier, media_type=media_type)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
