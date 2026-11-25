@@ -182,6 +182,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       <button class="tab-btn" onclick="switchTab('tabSiem')">📡 SIEM Streaming</button>
       <button class="tab-btn" onclick="switchTab('tabAiIntent')">🧠 AI Intent & Psychology</button>
       <button class="tab-btn" onclick="switchTab('tabDnsAudit')">🛡️ DNS Spoofing Audit</button>
+      <button class="tab-btn" onclick="switchTab('tabSandbox')">🧪 URL Sandbox</button>
+      <button class="tab-btn" onclick="switchTab('tabCases')">📋 SOC Cases</button>
     </div>
 
     <!-- Tab 1: Overview -->
@@ -390,6 +392,90 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <tbody id="dnsAuditBody"><tr><td colspan="3" style="color: var(--text-secondary);">Enter a domain or scan an email to audit live DNS authentication records.</td></tr></tbody>
         </table>
         <div id="dnsRiskSummary" style="margin-top: 14px; font-size: 13px;"></div>
+      </div>
+    </div>
+
+    <!-- Tab 12: URL Detonation Sandbox -->
+    <div id="tabSandbox" class="tab-content">
+      <div class="card" style="border-left: 4px solid var(--warning);">
+        <h4 style="color: var(--warning); margin-bottom: 12px;">Dynamic URL Detonation & DOM Sandbox</h4>
+        <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+          <input id="sandboxUrlInput" type="text" placeholder="Enter target URL to detonate (e.g. http://185.220.101.5/login.php or select from scan)" style="flex: 3; padding: 10px; background: var(--bg-base); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 6px;">
+          <input id="sandboxTimeoutInput" type="number" value="8" style="width: 70px; padding: 10px; background: var(--bg-base); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 6px;" title="Timeout seconds">
+          <button class="btn" onclick="detonateSandboxUrl()" style="background: var(--warning); color: #0b0f19; font-weight: 700;">Detonate URL</button>
+        </div>
+        <div id="sandboxOverview" style="display: none; margin-bottom: 16px;">
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+            <div style="background: var(--bg-surface-elevated); padding: 14px; border-radius: 8px;">
+              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-secondary);">Detonation Verdict</div>
+              <div id="sandboxVerdict" style="font-size: 20px; font-weight: 800;">-</div>
+              <div id="sandboxRiskScore" style="font-size: 12px; margin-top: 4px;">-</div>
+            </div>
+            <div style="background: var(--bg-surface-elevated); padding: 14px; border-radius: 8px;">
+              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-secondary);">Landing Destination</div>
+              <div id="sandboxFinalUrl" class="code" style="font-size: 13px; font-weight: 700; word-break: break-all;">-</div>
+              <div id="sandboxTitle" style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">-</div>
+            </div>
+          </div>
+          <div id="sandboxBrandAlert" style="margin-bottom: 14px;"></div>
+          <div style="margin-bottom: 14px;">
+            <h5 style="color: var(--accent); font-size: 13px; margin-bottom: 6px;">Redirect Chain Traversal</h5>
+            <table>
+              <thead><tr><th>Hop #</th><th>Status</th><th>Destination URL</th><th>Latency (ms)</th></tr></thead>
+              <tbody id="sandboxHopsBody"></tbody>
+            </table>
+          </div>
+          <div style="margin-bottom: 14px;">
+            <h5 style="color: var(--accent); font-size: 13px; margin-bottom: 6px;">Interactive DOM Forms & Password Harvesting</h5>
+            <table>
+              <thead><tr><th>Action Target</th><th>Method</th><th>Password Field</th><th>External POST</th></tr></thead>
+              <tbody id="sandboxFormsBody"></tbody>
+            </table>
+          </div>
+          <div>
+            <h5 style="color: var(--danger); font-size: 13px; margin-bottom: 6px;">Forensic Anomalies & Indicators</h5>
+            <ul id="sandboxIndicatorsList" style="padding-left: 20px; font-size: 13px; color: #fca5a5;"></ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 13: SOC Case Queue -->
+    <div id="tabCases" class="tab-content">
+      <div class="card" style="border-left: 4px solid #38bdf8;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
+          <h4 style="color: #38bdf8; margin: 0;">SOC Incident Triage & Case Management Queue</h4>
+          <div style="display: flex; gap: 10px;">
+            <button class="btn" onclick="createCaseFromCurrentScan()" style="background: var(--accent); color: #0b0f19; font-weight: 700;">+ Open Case from Active Scan</button>
+            <button class="btn" onclick="loadCases()">Refresh Queue</button>
+          </div>
+        </div>
+        <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+          <select id="caseStatusFilter" onchange="loadCases()" style="padding: 8px; background: var(--bg-base); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 6px;">
+            <option value="">All Statuses</option>
+            <option value="NEW">NEW</option>
+            <option value="IN_TRIAGE">IN_TRIAGE</option>
+            <option value="CONTAINED">CONTAINED</option>
+            <option value="CLOSED_MALICIOUS">CLOSED_MALICIOUS</option>
+            <option value="CLOSED_FALSE_POSITIVE">CLOSED_FALSE_POSITIVE</option>
+          </select>
+        </div>
+        <table>
+          <thead><tr><th>Case ID</th><th>Severity</th><th>Status</th><th>Score</th><th>Sender</th><th>Subject</th><th>Analyst</th><th>Actions</th></tr></thead>
+          <tbody id="casesBody"><tr><td colspan="8" style="color: var(--text-secondary);">Click Refresh Queue to load cases.</td></tr></tbody>
+        </table>
+        <div id="caseDetailModal" style="display: none; margin-top: 20px; background: var(--bg-surface-elevated); padding: 16px; border-radius: 8px; border: 1px solid var(--border-color);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h5 id="modalCaseTitle" style="color: var(--accent); margin: 0; font-size: 15px;">-</h5>
+            <button class="btn" onclick="document.getElementById('caseDetailModal').style.display='none'">Close</button>
+          </div>
+          <div id="modalCaseMeta" style="font-size: 13px; margin-bottom: 12px; color: var(--text-secondary);">-</div>
+          <pre id="modalCaseTimeline" style="background: var(--bg-base); padding: 12px; border-radius: 6px; font-size: 12px; max-height: 200px; overflow-y: auto; color: var(--text-primary); font-family: monospace;"></pre>
+          <div style="display: flex; gap: 10px; margin-top: 12px;">
+            <input id="newNoteInput" type="text" placeholder="Add investigation note or hypothesis..." style="flex: 1; padding: 8px; background: var(--bg-base); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 6px;">
+            <button class="btn" onclick="submitCaseNote()" style="background: var(--accent); color: #0b0f19;">Add Note</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -880,6 +966,212 @@ async function executeDnsAudit() {
     `;
   } catch (err) {
     body.innerHTML = `<tr><td colspan="3" style="color: var(--danger);">DNS audit error: ${err.message}</td></tr>`;
+  }
+}
+
+// Tab 12: URL Sandbox Detonation
+async function detonateSandboxUrl() {
+  const url = document.getElementById('sandboxUrlInput').value.trim();
+  const timeout = parseFloat(document.getElementById('sandboxTimeoutInput').value) || 8;
+  if (!url) {
+    alert('Please enter a target URL to detonate.');
+    return;
+  }
+
+  const overview = document.getElementById('sandboxOverview');
+  overview.style.display = 'block';
+  document.getElementById('sandboxVerdict').innerText = 'DETONATING...';
+  document.getElementById('sandboxRiskScore').innerText = 'Executing headless redirect & DOM crawl...';
+
+  try {
+    const resp = await fetch('/api/sandbox/detonate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, timeout })
+    });
+    const data = await resp.json();
+
+    const verdictColor = data.verdict === 'MALICIOUS' ? 'var(--danger)' : (data.verdict === 'SUSPICIOUS' ? 'var(--warning)' : 'var(--success)');
+    document.getElementById('sandboxVerdict').innerHTML = `<span style="color: ${verdictColor}">${data.verdict}</span>`;
+    document.getElementById('sandboxRiskScore').innerHTML = `Detonation Risk Score: <strong style="color: ${verdictColor}">${data.risk_score}/100</strong>`;
+    document.getElementById('sandboxFinalUrl').innerText = data.final_url;
+    document.getElementById('sandboxTitle').innerText = data.page_title ? `Title: "${data.page_title}" (Server: ${data.server_banner || 'Hidden'})` : '(No HTML title declared)';
+
+    // Brand Alert
+    const brandAlert = document.getElementById('sandboxBrandAlert');
+    if (data.brand_impersonation && data.brand_impersonation.detected) {
+      brandAlert.innerHTML = `
+        <div style="background: rgba(239, 68, 68, 0.15); border: 1px solid var(--danger); padding: 12px; border-radius: 6px; color: #fca5a5; font-size: 13px;">
+          <strong>⚠️ UNAUTHORIZED BRAND CLONE DETECTED:</strong> Impersonating <span style="color: var(--warning); font-weight: bold;">${data.brand_impersonation.impersonated_brand}</span> (Confidence: ${(data.brand_impersonation.confidence * 100).toFixed(0)}%)
+          ${(data.brand_impersonation.matched_indicators || []).map(i => `<div>• ${i}</div>`).join('')}
+        </div>
+      `;
+    } else {
+      brandAlert.innerHTML = '';
+    }
+
+    // Redirect Hops
+    const hopsBody = document.getElementById('sandboxHopsBody');
+    if (data.redirect_chain && data.redirect_chain.length > 0) {
+      hopsBody.innerHTML = data.redirect_chain.map(h => `
+        <tr>
+          <td>${h.hop_number}</td>
+          <td><span class="pill ${h.status_code >= 400 ? 'danger' : (h.status_code >= 300 ? 'warning' : 'success')}">${h.status_code}</span></td>
+          <td class="code" style="max-width: 450px; word-break: break-all;">${h.url}</td>
+          <td>${h.elapsed_ms.toFixed(1)}</td>
+        </tr>
+      `).join('');
+    } else {
+      hopsBody.innerHTML = '<tr><td colspan="4" style="color: var(--text-secondary);">Direct connection (0 redirect hops)</td></tr>';
+    }
+
+    // Forms
+    const formsBody = document.getElementById('sandboxFormsBody');
+    if (data.forms_detected && data.forms_detected.length > 0) {
+      formsBody.innerHTML = data.forms_detected.map(f => `
+        <tr>
+          <td class="code">${f.action}</td>
+          <td><strong>${f.method}</strong></td>
+          <td>${f.has_password_field ? '<span class="pill danger">YES</span>' : '<span class="pill success">NO</span>'}</td>
+          <td>${f.is_external_post ? '<span class="pill danger">YES</span>' : '<span class="pill success">NO</span>'}</td>
+        </tr>
+      `).join('');
+    } else {
+      formsBody.innerHTML = '<tr><td colspan="4" style="color: var(--text-secondary);">No HTML form elements identified in landing DOM</td></tr>';
+    }
+
+    // Indicators
+    const indList = document.getElementById('sandboxIndicatorsList');
+    if (data.suspicious_indicators && data.suspicious_indicators.length > 0) {
+      indList.innerHTML = data.suspicious_indicators.map(i => `<li>${i}</li>`).join('');
+    } else {
+      indList.innerHTML = '<li style="color: var(--success);">Clean landing page: no deceptive forms, brand clones, or evasive redirects detected.</li>';
+    }
+  } catch (err) {
+    alert('Detonation error: ' + err.message);
+  }
+}
+
+// Tab 13: SOC Case Queue Management
+let selectedCaseId = null;
+
+async function loadCases() {
+  const statusFilter = document.getElementById('caseStatusFilter').value;
+  const tbody = document.getElementById('casesBody');
+  tbody.innerHTML = '<tr><td colspan="8" style="color: var(--text-secondary);">Loading cases from SOC database...</td></tr>';
+
+  try {
+    const url = '/api/cases' + (statusFilter ? `?status=${encodeURIComponent(statusFilter)}` : '');
+    const resp = await fetch(url);
+    const cases = await resp.json();
+
+    if (!cases || cases.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" style="color: var(--text-secondary);">No cases found.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = cases.map(c => {
+      const sevClass = c.severity === 'CRITICAL' ? 'danger' : (c.severity === 'HIGH' || c.severity === 'MEDIUM' ? 'warning' : 'success');
+      const statClass = c.status === 'CONTAINED' ? 'success' : (c.status === 'IN_TRIAGE' ? 'accent' : (c.status === 'NEW' ? 'danger' : 'secondary'));
+      return `
+        <tr>
+          <td><strong style="color: var(--accent);">${c.case_id}</strong></td>
+          <td><span class="pill ${sevClass}">${c.severity}</span></td>
+          <td><span class="pill ${statClass}">${c.status}</span></td>
+          <td><strong>${c.score.toFixed(0)}</strong></td>
+          <td style="max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${c.sender}</td>
+          <td style="max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${c.subject}</td>
+          <td style="color: var(--text-secondary);">${c.assigned_analyst}</td>
+          <td>
+            <button class="btn" style="padding: 4px 8px; font-size: 11px;" onclick="viewCaseDetail('${c.case_id}')">View</button>
+            <button class="btn" style="padding: 4px 8px; font-size: 11px;" onclick="advanceCaseStatus('${c.case_id}', '${c.status}')">Advance</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="8" style="color: var(--danger);">Failed to load cases: ${err.message}</td></tr>`;
+  }
+}
+
+async function createCaseFromCurrentScan() {
+  if (!currentResult) {
+    alert('Please scan an email first before opening a case.');
+    return;
+  }
+
+  try {
+    const resp = await fetch(`/api/cases/from-scan/${currentResult.file_hash}`, { method: 'POST' });
+    if (!resp.ok) {
+      const err = await resp.json();
+      throw new Error(err.detail || 'Failed to create case');
+    }
+    const c = await resp.json();
+    alert(`Case opened successfully: ${c.case_id}`);
+    loadCases();
+    switchTab('tabCases');
+  } catch (err) {
+    alert('Error opening case: ' + err.message);
+  }
+}
+
+async function viewCaseDetail(caseId) {
+  selectedCaseId = caseId;
+  const modal = document.getElementById('caseDetailModal');
+  modal.style.display = 'block';
+
+  try {
+    const resp = await fetch(`/api/cases/${caseId}`);
+    const c = await resp.json();
+
+    document.getElementById('modalCaseTitle').innerText = `${c.case_id}: ${c.title}`;
+    document.getElementById('modalCaseMeta').innerHTML = `
+      <strong>Status:</strong> ${c.status} | <strong>Severity:</strong> ${c.severity} | <strong>Analyst:</strong> ${c.assigned_analyst} | <strong>Risk Score:</strong> ${c.score.toFixed(1)}/100
+      <br><span style="color: var(--text-secondary);">${c.summary}</span>
+    `;
+
+    const timelineText = (c.timeline || []).map(n => `[${n.timestamp}] ${n.analyst}: ${n.message}`).join('\n');
+    document.getElementById('modalCaseTimeline').innerText = timelineText || 'No timeline entries recorded.';
+  } catch (err) {
+    alert('Error loading case detail: ' + err.message);
+  }
+}
+
+async function submitCaseNote() {
+  if (!selectedCaseId) return;
+  const note = document.getElementById('newNoteInput').value.trim();
+  if (!note) return;
+
+  try {
+    await fetch(`/api/cases/${selectedCaseId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note, note_analyst: 'web-analyst' })
+    });
+    document.getElementById('newNoteInput').value = '';
+    viewCaseDetail(selectedCaseId);
+    loadCases();
+  } catch (err) {
+    alert('Error adding note: ' + err.message);
+  }
+}
+
+async function advanceCaseStatus(caseId, currentStatus) {
+  let nextStatus = 'IN_TRIAGE';
+  if (currentStatus === 'NEW') nextStatus = 'IN_TRIAGE';
+  else if (currentStatus === 'IN_TRIAGE') nextStatus = 'CONTAINED';
+  else if (currentStatus === 'CONTAINED') nextStatus = 'CLOSED_MALICIOUS';
+  else if (currentStatus.startsWith('CLOSED')) nextStatus = 'IN_TRIAGE';
+
+  try {
+    await fetch(`/api/cases/${caseId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: nextStatus, note: `Analyst advanced case to ${nextStatus}` })
+    });
+    loadCases();
+  } catch (err) {
+    alert('Error updating case status: ' + err.message);
   }
 }
 </script>
